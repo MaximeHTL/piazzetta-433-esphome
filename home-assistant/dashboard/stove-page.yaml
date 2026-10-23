@@ -1,0 +1,139 @@
+# A full "stove" view (sub-view) — needs button-card (https://github.com/custom-cards/button-card) and Mushroom.
+# Add it to a "sections" dashboard (raw configuration editor) under views:
+title: Stove
+path: stove
+subview: true
+type: sections
+max_columns: 1
+sections:
+  - type: grid
+    cards:
+      - type: heading
+        heading: Remote
+        heading_style: title
+        icon: mdi:remote
+      # Reconstructed LCD of the remote (icons, two lines, clock + temperature). Tap = state history.
+      # Reminder (button-card): styles are lists of {property: value} pairs.
+      - type: custom:button-card
+        entity: sensor.pellet_stove_state
+        show_name: false
+        show_icon: false
+        show_state: false
+        tap_action:
+          action: more-info
+        hold_action:
+          action: none
+        custom_fields:
+          top: |
+            [[[
+              const p = parseInt(states['number.pellet_stove_power']?.state) || 0;
+              const v = parseInt(states['number.pellet_stove_fan']?.state) || 0;
+              const bars = (n) => '▮'.repeat(n) + '▯'.repeat(Math.max(0, 4 - n));
+              const radio = states['binary_sensor.pellet_stove_stove_reachable']?.state === 'on' ? '📶' : '⚠️';
+              return `<span>P ${bars(p)}</span><span>${radio}</span><span>✻ ${bars(v)}</span>`;
+            ]]]
+          line1: "[[[ return states['sensor.pellet_stove_screen_line_1']?.state || '—'; ]]]"
+          line2: "[[[ return states['sensor.pellet_stove_screen_line_2']?.state || '&nbsp;'; ]]]"
+          bottom: "[[[ return states['sensor.pellet_stove_screen_bottom']?.state || ''; ]]]"
+        styles:
+          card:
+            - background: "#c9cfb4"
+            - border: "6px solid #1f2328"
+            - border-radius: 14px
+            - padding: 4px 12px 6px
+            - box-shadow: "inset 0 0 12px rgba(0,0,0,.25)"
+          grid:
+            - grid-template-areas: '"top" "line1" "line2" "bottom"'
+            - grid-template-columns: 1fr
+          custom_fields:
+            top:
+              - display: flex
+              - justify-content: space-between
+              - font-size: 12px
+              - color: "#3b3fa8"
+              - letter-spacing: 1px
+            line1:
+              - font-family: ui-monospace, Consolas, monospace
+              - font-size: 24px
+              - font-weight: 700
+              - color: "#3b3fa8"
+              - letter-spacing: 2px
+              - min-height: 30px
+            line2:
+              - font-family: ui-monospace, Consolas, monospace
+              - font-size: 24px
+              - font-weight: 700
+              - color: "#3b3fa8"
+              - letter-spacing: 2px
+              - min-height: 30px
+            bottom:
+              - font-family: ui-monospace, Consolas, monospace
+              - font-size: 18px
+              - font-weight: 700
+              - color: "#3b3fa8"
+              - border-top: 2px solid #9aa08a
+              - margin-top: 4px
+              - padding-top: 2px
+        grid_options:
+          columns: full
+      # + the on/off, power and fan cards of home-cards.yaml (copy them here)
+
+  - type: grid
+    cards:
+      - type: heading
+        heading: Thermostat
+        heading_style: title
+        icon: mdi:thermostat
+      - type: thermostat
+        entity: climate.pellet_stove
+        features:
+          - type: climate-hvac-modes
+            hvac_modes: [heat, "off"]
+          - type: climate-preset-modes
+            style: icons
+            preset_modes: [comfort, eco, away]
+
+  - type: grid
+    cards:
+      - type: heading
+        heading: History
+        heading_style: title
+        icon: mdi:chart-timeline
+      - type: history-graph
+        title: States (24 h)
+        hours_to_show: 24
+        entities:
+          - entity: sensor.pellet_stove_state
+      - type: history-graph
+        title: States (7 days)
+        hours_to_show: 168
+        entities:
+          - entity: sensor.pellet_stove_state
+      - type: logbook
+        title: Phases (24 h)
+        hours_to_show: 24
+        target:
+          entity_id: [sensor.pellet_stove_phase]
+      - type: history-graph
+        title: Temperatures (24 h)
+        hours_to_show: 24
+        entities:
+          - entity: sensor.your_room_temperature
+          - entity: sensor.pellet_stove_room_temperature_remote
+
+  - type: grid
+    cards:
+      - type: heading
+        heading: Diagnostics
+        heading_style: title
+        icon: mdi:stethoscope
+      - type: entities
+        entities:
+          - binary_sensor.pellet_stove_stove_reachable
+          - sensor.pellet_stove_stove_radio_signal
+          - sensor.pellet_stove_wi_fi_signal
+          - sensor.pellet_stove_phase
+          - sensor.pellet_stove_state
+          - sensor.pellet_stove_room_temperature_remote
+          - sensor.pellet_stove_stove_clock
+          - button.pellet_stove_poll_stove

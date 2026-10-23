@@ -1,0 +1,12 @@
+# ESPHome / PlatformIO build output
+.esphome/
+.pioenvs/
+.piolibdeps/
+build/
+*.bin
+# Secrets
+secrets.yaml
+# Python
+__pycache__/
+# Captures with personal data
+*.local.*

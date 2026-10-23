@@ -1,0 +1,16 @@
+# Phone notification when the stove shows an error.
+# Replace notify.mobile_app_your_phone with your own notify service
+# (mobile app: always notify.mobile_app_<device>, not notify.<device>).
+alias: Pellet stove - error alert
+description: Notifies when the Piazzetta stove reports an error.
+mode: single
+triggers:
+  - trigger: state
+    entity_id: sensor.pellet_stove_state
+    to: "Défaut"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "🔥 Pellet stove: error"
+      message: >-
+        The stove shows "{{ states('sensor.pellet_stove_phase') }}" ({{ now().strftime('%H:%M') }}).

@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banc poêle 433</title>
+<style>
+:root {
+  --fond: #f6f7f9; --carte: #ffffff; --texte: #1d2330; --doux: #667085; --bord: #dde1e8;
+  --accent: #c2410c; --accent-doux: #fff1e8; --ok: #15803d; --err: #b91c1c;
+  --tel: #1d4ed8; --tel-doux: #e7eefe; --poele: #b45309; --poele-doux: #fdf0dc;
+  --diff: #dc2626; --diff-fond: #fee2e2; --repere: #7c3aed; --repere-doux: #f1eafe;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fond: #12151b; --carte: #1b1f27; --texte: #e6e9ef; --doux: #98a2b3; --bord: #2c323d;
+    --accent: #fb923c; --accent-doux: #3a2416; --ok: #4ade80; --err: #f87171;
+    --tel: #93b4ff; --tel-doux: #1d2a4a; --poele: #fbbf24; --poele-doux: #3a2c12;
+    --diff: #f87171; --diff-fond: #4a1d1d; --repere: #c4b5fd; --repere-doux: #2b2147;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fond); color: var(--texte); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; background: var(--carte); border-bottom: 1px solid var(--bord); position: sticky; top: 0; z-index: 2; }
+h1 { font-size: 17px; margin: 0 8px 0 0; }
+button, input, select { font: inherit; color: inherit; }
+button { background: var(--carte); border: 1px solid var(--bord); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.principal { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.petit { padding: 2px 8px; font-size: 12px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+input[type=text], input[type=number] { background: var(--fond); border: 1px solid var(--bord); border-radius: 6px; padding: 5px 8px; }
+.pastille { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--fond); border: 1px solid var(--bord); }
+.pastille.on { color: var(--ok); border-color: var(--ok); }
+.pastille.tx { color: var(--accent); border-color: var(--accent); }
+main { padding: 12px 16px 40px; max-width: 1400px; margin: 0 auto; }
+.barre { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.barre .sep { flex: 1; }
+.carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+details.carte summary { cursor: pointer; font-weight: 600; }
+.reglages { display: flex; flex-wrap: wrap; gap: 14px 22px; margin-top: 10px; }
+.reglages label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--doux); }
+.reglages input { width: 110px; }
+.onglets { display: flex; gap: 4px; margin-bottom: -1px; }
+.onglets button { border-radius: 8px 8px 0 0; border-bottom-color: transparent; }
+.onglets button.actif { background: var(--carte); border-color: var(--bord); border-bottom-color: var(--carte); font-weight: 600; }
+.vue { border-radius: 0 10px 10px 10px; padding: 0; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--bord); vertical-align: top; white-space: nowrap; }
+th { font-size: 12px; color: var(--doux); font-weight: 600; position: sticky; top: 0; background: var(--carte); }
+td.bits { font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: normal; word-break: break-all; min-width: 320px; }
+.bits .d { color: var(--diff); background: var(--diff-fond); font-weight: 700; }
+.bits .sep { color: var(--doux); }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 12px; font-weight: 600; }
+.badge.tel { color: var(--tel); background: var(--tel-doux); }
+.badge.poele { color: var(--poele); background: var(--poele-doux); }
+.badge.inconnu { color: var(--doux); background: var(--fond); }
+tr.repere td { background: var(--repere-doux); color: var(--repere); font-weight: 600; }
+tr.ref td { box-shadow: inset 3px 0 0 var(--accent); }
+tr.emis td { background: var(--accent-doux); }
+.doux { color: var(--doux); }
+.vide { padding: 30px; text-align: center; color: var(--doux); }
+input.etiquette { width: 170px; }
+#journal { font-family: ui-monospace, Consolas, monospace; font-size: 12px; max-height: 180px; overflow: auto; white-space: pre-wrap; margin-top: 8px; }
+#journal .err { color: var(--err); }
+#journal .ok { color: var(--ok); }
+.aide { font-size: 13px; color: var(--doux); }
+.aide b { color: var(--texte); }
+.ecran-zone { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.lcd { background: #c9cfb4; color: #3b3fa8; border: 10px solid #1f2328; border-radius: 12px; width: 300px; padding: 10px 14px 12px; font-family: ui-monospace, Consolas, monospace; box-shadow: inset 0 0 12px rgba(0,0,0,.25); }
+.lcd .icones { display: flex; justify-content: space-between; font-size: 12px; min-height: 18px; letter-spacing: 1px; }
+.lcd .ligne { font-size: 30px; font-weight: 700; text-align: center; white-space: pre; line-height: 1.15; letter-spacing: 2px; }
+.lcd .bas { display: flex; justify-content: space-between; font-size: 24px; font-weight: 700; border-top: 2px solid #9aa08a; margin-top: 6px; padding-top: 4px; white-space: pre; }
+.lcd .vu { font-size: 11px; color: #5b5f6b; text-align: right; margin-top: 4px; }
+table.etat td { padding: 4px 10px; }
+table.etat td:first-child { color: var(--doux); }
+@media (max-width: 700px) { header { position: static; } td.bits { min-width: 220px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Banc poêle 433</h1>
+  <button id="bConnexion" class="principal">Connecter l'ESP</button>
+  <span id="etat" class="pastille">Déconnecté</span>
+  <span id="bruit" class="doux"></span>
+  <span class="sep" style="flex:1"></span>
+  <input type="text" id="texteRepere" placeholder="Ce que je viens de faire (ex. + vitesse 1→2)" style="min-width:260px">
+  <button id="bRepere">Poser un repère</button>
+  <button id="bLive" title="Écrit tout en continu dans un fichier que Claude peut lire">Journal en direct : inactif</button>
+</header>
+
+<main>
+  <div id="pasSerial" class="carte" hidden>
+    <b>Ce navigateur ne sait pas parler à l'USB.</b> Ouvre cette page dans <b>Chrome</b> ou <b>Edge</b> (Web Serial).
+  </div>
+
+  <details class="carte">
+    <summary>Mode d'emploi</summary>
+    <div class="aide">
+      <p>1. Ferme le moniteur série de l'IDE Arduino, puis clique sur <b>Connecter l'ESP</b> et choisis le port (COM7).</p>
+      <p>2. Avant chaque appui sur la télécommande, écris ce que tu vas faire dans le champ en haut, puis <b>Poser un repère</b>. Les trames qui suivent sont celles de ton appui.</p>
+      <p>3. L'onglet <b>Trames distinctes</b> regroupe les trames identiques. Une trame qui apparaît juste après un repère, et seulement là, est candidate pour être la commande. Clique sur <b>Réf.</b> pour la prendre comme référence : les bits qui diffèrent sur les autres trames s'affichent en rouge.</p>
+      <p>4. <b>Émettre</b> renvoie la trame par l'ESP. Coche plusieurs trames et clique sur <b>Émettre la sélection</b> pour rejouer une séquence avec ses écarts d'origine (par exemple l'annonce puis la commande).</p>
+      <p>5. <b>Exporter</b> sauvegarde la session dans un fichier, à garder ou à me transmettre.</p>
+      <p class="doux">Décodage : chaque tranche de l'unité (≈ 416,7 µs) donne un bit ; signal = 1, silence = 0. Les silences de 12 bits ou plus (synchro) sont affichés comme « ┃ ».</p>
+    </div>
+  </details>
+
+  <details class="carte">
+    <summary>Réglages</summary>
+    <div class="reglages">
+      <label>Seuil de capture (dBm)<input type="number" id="rSeuil" value="-78"></label>
+      <label>Puissance d'émission (dBm, 2 à 17)<input type="number" id="rPuissance" value="10" min="2" max="17"></label>
+      <label>Fréquence (MHz)<input type="number" id="rFrequence" value="433.92" step="0.01"></label>
+      <label>Unité de bit (µs)<input type="number" id="rUnite" value="416.67" step="0.01"></label>
+      <label>Identifiant télécommande (hex)<input type="text" id="rIdent" value="C5" maxlength="2" style="width:60px"></label>
+      <label>Répétitions à l'émission<input type="number" id="rRepet" value="1" min="1" max="20"></label>
+      <label>Pause entre répétitions (ms)<input type="number" id="rPause" value="30" min="0" max="2000"></label>
+      <label>Forme émise
+        <select id="rForme"><option value="propre">Reconstruite depuis les bits</option><option value="brute">Durées brutes captées</option></select>
+      </label>
+    </div>
+    <div class="barre" style="margin-top:10px"><button id="bAppliquer">Envoyer les réglages à l'ESP</button></div>
+  </details>
+
+  <div class="barre">
+    <label><input type="checkbox" id="fInterro" checked> Masquer les interrogations</label>
+    <label><input type="checkbox" id="fInconnu"> Masquer les trames inconnues</label>
+    <span class="sep"></span>
+    <button id="bEmettreSel" disabled>Émettre la sélection</button>
+    <button id="bExporter">Exporter</button>
+    <button id="bImporter">Importer</button>
+    <input type="file" id="fichier" accept=".json" hidden>
+    <button id="bEffacer">Effacer</button>
+  </div>
+
+  <div class="carte">
+    <b>Écran du poêle</b> <span class="doux">— reconstitué depuis la dernière trame d'écran reçue (réponse à une interrogation ou à une touche)</span>
+    <div class="ecran-zone" style="margin-top:10px">
+      <div class="lcd" id="lcd">
+        <div class="icones"><span id="lcdP"></span><span>📶</span><span id="lcdV"></span></div>
+        <div class="ligne" id="lcdL1">—</div>
+        <div class="ligne" id="lcdL2"> </div>
+        <div class="bas"><span id="lcdG"></span><span id="lcdD"></span></div>
+        <div class="vu" id="lcdVu">aucune trame d'écran pour l'instant</div>
+      </div>
+      <table class="etat"><tbody>
+        <tr><td>Heure du poêle</td><td id="eHeure">—</td></tr>
+        <tr><td>Température</td><td id="eTemp">—</td></tr>
+        <tr><td>Puissance</td><td id="ePuis">—</td></tr>
+        <tr><td>Ventilateur</td><td id="eVent">—</td></tr>
+        <tr><td>Message / menu</td><td id="eMsg">—</td></tr>
+        <tr><td>Mis à jour</td><td id="eVu">—</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="carte">
+    <b>Composer une trame de télécommande</b> <span class="doux">(le 1er octet tapé est envoyé tel quel ; les boutons utilisent l'identifiant des Réglages)</span>
+    <span class="doux">— octets en hexadécimal ; la somme de contrôle est ajoutée toute seule.</span>
+    <div class="barre" style="margin-top:8px">
+      <input type="text" id="cOctets" value="C5 3D 00 00" style="width:200px;font-family:ui-monospace,Consolas,monospace">
+      <button id="bComposer">Émettre ces octets</button>
+      <span class="sep"></span>
+      <button id="bVentPlus" class="principal">Ventilateur +</button>
+      <button id="bVentMoins" class="principal">Ventilateur −</button>
+      <button id="bPuisPlus" class="principal">Puissance +</button>
+      <button id="bPuisMoins" class="principal">Puissance −</button>
+      <button id="bInterroger">Interroger le poêle</button>
+      <button id="bTrame61" title="Une seule trame 61 (« bouton maintenu »), sans la touche 81 ni le maintien">Trame 61 seule</button>
+      <button id="bMarcheArret" title="Reproduit l'appui long sur ⏻ de la télécommande">Appui long ⏻ (marche/arrêt)</button>
+      <label title="Comme le fera le module Home Assistant"><input type="checkbox" id="cAuto"> Interroger automatiquement toutes les 30 s</label>
+    </div>
+    <div class="aide">Touches connues : <b>00</b> interrogation, <b>84</b> bouton ventilateur, <b>98</b> bouton puissance (chacun ouvre ou referme son menu sur le poêle), <b>88</b> « + », <b>8C</b> « − ». Deuxième octet : <b>3D</b> repos, <b>BD</b> menu ouvert. « Ventilateur + » envoie <code>C5 3D 00 84</code>, attend la réponse du poêle, puis <code>C5 BD 00 88</code>.</div>
+  </div>
+
+  <div class="onglets">
+    <button data-vue="fil" class="actif">Fil</button>
+    <button data-vue="distinctes">Trames distinctes</button>
+  </div>
+  <div class="carte vue" id="vue"></div>
+
+  <details class="carte">
+    <summary>Journal de l'ESP</summary>
+    <div id="journal"></div>
+  </details>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const CLE = "banc-poele-433";
+
+// ---------- État ----------
+let trames = [];        // {id, t, rssi, seg}
+let reperes = [];       // {id, t, texte}
+let etiquettes = {};    // signature -> texte
+let refSig = null;
+let selection = new Set();
+let vueActive = "fil";
+let prochainId = 1;
+let port = null, ecrivain = null, attenteOK = null, emissionEnCours = false;
+let journalLignes = [];  // exporté avec la session
+
+// ---------- Journal en direct ----------
+// Chaque événement (trame, repère, émission, ligne de l'ESP) est ajouté en JSON, une ligne par événement,
+// dans un fichier choisi une fois par session : Claude le lit pendant les essais, sans export.
+let fichierLive = null, tamponLive = [], ecritureLive = false;
+function live(obj) { if (fichierLive || parServeur) tamponLive.push(JSON.stringify({ h: new Date().toLocaleTimeString("fr-FR"), ...obj }) + "\n"); }
+async function activerLive() {
+  if (!window.showSaveFilePicker) { journal("Journal en direct impossible : navigateur trop ancien (Chrome ou Edge récent requis)", "err"); return; }
+  try {
+    const f = await window.showSaveFilePicker({ suggestedName: "banc-poele-live.jsonl", startIn: "downloads", types: [{ description: "Journal du banc", accept: { "application/json": [".jsonl"] } }] });
+    const w = await f.createWritable(); await w.write(""); await w.close();
+    fichierLive = f;
+    $("bLive").textContent = "Journal en direct : actif"; $("bLive").classList.add("principal");
+    live({ k: "debut", texte: "Journal en direct démarré" });
+  } catch (e) { if (e.name !== "AbortError") journal("Journal en direct : " + e.message, "err"); }
+}
+// Le fichier est réécrit en entier depuis la mémoire : plus simple et plus robuste qu'un ajout en fin
+let toutLive = [], nbEcrits = 0, erreurLiveSignalee = false;
+// Page servie par serveur-banc.py : le journal part directement au serveur, sans rien à activer
+const parServeur = location.protocol.startsWith("http");
+async function viderLive() {
+  if (parServeur && !ecritureLive && tamponLive.length) {
+    ecritureLive = true;
+    const lot = tamponLive.splice(0);
+    try {
+      const r = await fetch("/log", { method: "POST", body: lot.join("") });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      nbEcrits += lot.length; erreurLiveSignalee = false;
+      $("bLive").textContent = `Journal en direct : actif (${nbEcrits})`;
+    } catch (e) {
+      tamponLive.unshift(...lot);
+      $("bLive").textContent = "Journal en direct : serveur injoignable";
+      if (!erreurLiveSignalee) { erreurLiveSignalee = true; journal("Journal en direct : serveur injoignable (" + e.message + ")", "err"); }
+    }
+    ecritureLive = false;
+    return;
+  }
+  if (!fichierLive || ecritureLive || !tamponLive.length) return;
+  ecritureLive = true;
+  toutLive.push(...tamponLive.splice(0));
+  if (toutLive.length > 20000) toutLive.splice(0, toutLive.length - 20000);
+  try {
+    const w = await fichierLive.createWritable();
+    await w.write(toutLive.join("")); await w.close();
+    nbEcrits = toutLive.length; erreurLiveSignalee = false;
+    $("bLive").textContent = `Journal en direct : actif (${nbEcrits})`;
+  } catch (e) {
+    $("bLive").textContent = "Journal en direct : ERREUR";
+    if (!erreurLiveSignalee) { erreurLiveSignalee = true; journal("Journal en direct : écriture impossible (" + e.name + " : " + e.message + ")", "err"); }
+  }
+  ecritureLive = false;
+}
+setInterval(viderLive, 1000);
+function ajouterRepere(texte, t = Date.now()) {
+  reperes.push({ id: prochainId++, t, texte });
+  live({ k: "repere", texte });
+}
+
+function sauver() {
+  try { localStorage.setItem(CLE, JSON.stringify({ trames: trames.slice(-3000), reperes, etiquettes, refSig, prochainId })); } catch (e) {}
+}
+function charger() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CLE) || "null");
+    if (d) ({ trames = [], reperes = [], etiquettes = {}, refSig = null, prochainId = 1 } = d);
+  } catch (e) {}
+}
+
+// ---------- Décodage ----------
+const unite = () => parseFloat($("rUnite").value) || 416.67;
+const idTel = () => { const v = parseInt($("rIdent").value, 16); return Number.isFinite(v) ? v & 0xff : 0xC5; };
+
+function nettoyer(seg) {
+  // Fusionne les parasites plus courts que 0,3 unité avec leurs voisins
+  const U = unite(), out = [];
+  for (let i = 0; i < seg.length; i++) {
+    const d = seg[i];
+    if (d < 0.3 * U && out.length && i < seg.length - 1) { out[out.length - 1] += d + seg[i + 1]; i++; }
+    else out.push(d);
+  }
+  return out;
+}
+function enBits(seg) {
+  const U = unite();
+  let s = "";
+  nettoyer(seg).forEach((d, i) => {
+    let n = Math.max(1, Math.round(d / U));
+    if (i % 2) n = Math.min(n, 40);
+    s += (i % 2 ? "0" : "1").repeat(n);
+  });
+  return s;
+}
+function analyser(tr) {
+  const bits = enBits(tr.seg);
+  // Signature = tout ce qui suit la synchro (le début du préambule est souvent tronqué).
+  // Si un parasite précède le préambule, on saute la fausse synchro qu'il crée.
+  const re = /0{12,}/g;
+  let m = null, x;
+  while ((x = re.exec(bits))) {
+    if (!/^(?:10){3,}1?0{12,}/.test(bits.slice(x.index + x[0].length))) { m = x; break; }
+  }
+  const corps = m ? bits.slice(m.index + m[0].length) : bits;
+  const sig = corps.replace(/0+$/, "");
+  // Classement par octets : écrans B5 / heure B9 du poêle ; trames de télécommande = 5 octets à somme juste
+  // dont le 2e octet vaut 3D, 3E, BD ou BE (quel que soit l'identifiant en 1er octet).
+  let src = "inconnu", type = "?";
+  const o = octetsDe(sig).map((x) => x.v);
+  const sommeOK = (n) => o.length > n && somme(o.slice(0, n)) === o[n];
+  if (o[0] === 0xB5) { src = "poele"; type = "Écran"; }
+  else if (o[0] === 0xB9) { src = "poele"; type = "Heure"; }
+  else if (sommeOK(4) && (o[1] & 0x7C) === 0x3C) {
+    src = "tel";
+    const noms = { 0x00: "Interrogation", 0x84: "Touche ventilateur", 0x98: "Touche puissance", 0x88: "Touche +", 0x8C: "Touche −", 0x81: "⏻ appuyé", 0x61: "⏻ maintenu" };
+    type = noms[o[3]] || "Touche " + o[3].toString(16).toUpperCase().padStart(2, "0");
+    if (o[0] !== idTel()) type += ` (identifiant ${o[0].toString(16).toUpperCase()} ≠ réglage)`;
+  }
+  return { bits, sig, src, type, emitBits: m ? "10101010" + bits.slice(m.index).replace(/0+$/, "") : bits };
+}
+const cacheAnalyse = new Map();
+function infos(tr) {
+  if (!cacheAnalyse.has(tr.id)) cacheAnalyse.set(tr.id, analyser(tr));
+  return cacheAnalyse.get(tr.id);
+}
+function bitsHTML(sig) {
+  // Groupes de 8, synchros en ┃, bits différents de la référence en rouge
+  const ref = refSig && refSig !== sig ? refSig : null;
+  let html = "", n = 0, i = 0;
+  while (i < sig.length) {
+    const z = sig.slice(i).match(/^0{12,}/);
+    if (z) { html += ' <span class="sep">┃</span> '; i += z[0].length; n = 0; continue; }
+    const c = sig[i];
+    html += ref && ref[i] !== c ? `<span class="d">${c}</span>` : c;
+    i++; n++;
+    if (n % 8 === 0) html += " ";
+  }
+  if (ref && ref.length > sig.length) html += ` <span class="d">(+${ref.length - sig.length} bits dans la réf.)</span>`;
+  return html;
+}
+
+// ---------- Octets ----------
+// Découvert le 23/10/2026 : liaison série inversée à 2 400 bauds, 8 bits poids faible d'abord, parité paire.
+// Repos = 0, start = 1, 8 bits, parité, stop = 0. Dernier octet = somme sur 8 bits des précédents.
+function octetsDe(sig) {
+  const s = sig + "0".repeat(12), out = [];
+  let i = 0;
+  while (i < s.length - 11) {
+    if (s[i] !== "1") { i++; continue; }
+    const d = s.slice(i + 1, i + 9), p = s[i + 9], stop = s[i + 10];
+    const v = parseInt([...d].reverse().join(""), 2);
+    const ok = ([...d].filter((c) => c === "1").length + (p === "1" ? 1 : 0)) % 2 === 0 && stop === "0";
+    out.push({ v, ok });
+    i += 11;
+  }
+  while (out.length > 1 && out[out.length - 1].v === 0) out.pop();  // zéros de fin = silence
+  return out;
+}
+function bitsDeOctets(octs) {
+  let s = "";
+  for (const b of octs) {
+    let d = "", n = 0;
+    for (let k = 0; k < 8; k++) { const x = (b >> k) & 1; d += x; n += x; }
+    s += "1" + d + (n % 2) + "0";
+  }
+  return s;
+}
+const somme = (octs) => octs.reduce((a, b) => a + b, 0) & 0xff;
+function octetsHTML(sig) {
+  const o = octetsDe(sig);
+  if (!o.length) return "";
+  const hex = o.map((x) => (x.ok ? "" : '<span class="d">') + x.v.toString(16).toUpperCase().padStart(2, "0") + (x.ok ? "" : "</span>")).join(" ");
+  const vals = o.map((x) => x.v);
+  const sommeOK = vals.length > 2 && somme(vals.slice(0, -1)) === vals[vals.length - 1];
+  const texte = vals.filter((v) => v >= 32 && v < 127).map((v) => String.fromCharCode(v)).join("").replace(/\s+/g, " ").trim();
+  const e = decoderEcran(vals), h = decoderHeure(vals);
+  let resume = texte.length >= 4 ? `« ${esc(texte)} »` : "";
+  if (e) resume = `« ${esc(e.l1.trim())} ${esc(e.l2.trim())} » · ${esc((e.gauche + "  " + e.droite).trim())}` + (e.vent ? ` · ventilateur ${e.vent}` : "") + (e.barresP ? ` · P${e.barresP}` : "");
+  else if (h) resume = `heure ${h}`;
+  return hex + (sommeOK ? ' <span class="doux">✓</span>' : "") + (resume ? `<br><b>${resume}</b>` : "");
+}
+
+// ---------- Écran du poêle ----------
+// Trame d'écran (32 octets, vérifiée le 23/10/2026) :
+// B5 | bas gauche (4) | bas droite (5) | ligne 1 (9 car.) | ligne 2 (9 car.) | icônes (3) | somme
+// Les chiffres sont envoyés bruts (0 à 9), le bit 7 sert d'attribut (deux-points de l'heure, etc.), 5E = degré.
+const VENT_ICONE = { 0x08: 1, 0x18: 2, 0x39: 3, 0x7B: 4 };
+function carLCD(v) {
+  const c = v & 0x7f;
+  if (c <= 9) return String(c);
+  if (c === 0x5e) return "°";
+  if (c >= 32 && c < 127) return String.fromCharCode(c);
+  return "·";
+}
+const estChiffre = (v) => (v & 0x7f) <= 9;
+function decoderEcran(o) {
+  if (!o || o[0] !== 0xb5 || o.length < 32) return null;
+  if ((somme(o.slice(0, 31))) !== o[31]) return null;
+  const g = o.slice(1, 5), d = o.slice(5, 10), l1 = o.slice(10, 19), l2 = o.slice(19, 28), ic = o.slice(28, 31);
+  const e = { l1: l1.map(carLCD).join(""), l2: l2.map(carLCD).join(""), puissance: null, vent: VENT_ICONE[ic[2]] || null,
+    barresP: [0, 1, 2, 3].filter((k) => (ic[1] >> k) & 1).length, heure: null, temp: null };
+  if (g.every(estChiffre)) {
+    e.heure = `${g[0] & 0x7f}${g[1] & 0x7f}:${g[2] & 0x7f}${g[3] & 0x7f}`;
+    const t = d.filter(estChiffre).map((v) => v & 0x7f).join("");
+    if (t) e.temp = parseInt(t, 10);
+    e.gauche = e.heure; e.droite = (t ? t : "") + "°";
+  } else {
+    e.gauche = g.map(carLCD).join(""); e.droite = d.map(carLCD).join("");
+  }
+  const m = (e.l1 + e.l2).match(/P(\d)/);
+  if (/NIVEAU/.test(e.l1) && m) e.puissance = parseInt(m[1], 10);
+  else if (e.barresP) e.puissance = e.barresP;
+  e.menu = /REGLER/.test(e.l1) ? `${e.l1.trim()} ${e.l2.trim()} : ${(e.gauche + e.droite).replace(/\s/g, "")}` : null;
+  e.message = !/NIVEAU/.test(e.l1) && !e.menu ? `${e.l1.trim()} ${e.l2.trim()}` : null;
+  return e;
+}
+function decoderHeure(o) {
+  if (!o || o[0] !== 0xb9 || o.length < 6 || somme(o.slice(0, 5)) !== o[5]) return null;
+  const g = o.slice(1, 5);
+  return g.every(estChiffre) ? `${g[0] & 0x7f}${g[1] & 0x7f}:${g[2] & 0x7f}${g[3] & 0x7f}` : null;
+}
+let etatPoele = {};
+function majEcran(tr) {
+  const o = octetsDe(infos(tr).sig).map((x) => x.v);
+  const e = decoderEcran(o), h = decoderHeure(o);
+  if (!e && !h) return;
+  if (h) etatPoele.heure = h;
+  if (e) {
+    $("lcdL1").textContent = e.l1; $("lcdL2").textContent = e.l2;
+    $("lcdG").textContent = e.gauche; $("lcdD").textContent = e.droite;
+    $("lcdP").textContent = "P " + "▮".repeat(e.barresP) + "▯".repeat(Math.max(0, 4 - e.barresP));
+    $("lcdV").textContent = e.vent ? "✻ " + "▮".repeat(e.vent) + "▯".repeat(4 - e.vent) : "";
+    $("lcdVu").textContent = "écran reçu à " + heure(tr.t);
+    if (e.heure) etatPoele.heure = e.heure;
+    if (e.temp !== null) etatPoele.temp = e.temp;
+    if (e.puissance) etatPoele.puissance = e.puissance;
+    if (e.vent) etatPoele.vent = e.vent;
+    if (e.menu) etatPoele.msg = "menu " + e.menu;
+    else etatPoele.msg = e.message || "—";
+  }
+  etatPoele.vu = heure(tr.t);
+  $("eHeure").textContent = etatPoele.heure || "—";
+  $("eTemp").textContent = etatPoele.temp != null ? etatPoele.temp + " °C" : "—";
+  $("ePuis").textContent = etatPoele.puissance ? "P" + etatPoele.puissance : "—";
+  $("eVent").textContent = etatPoele.vent ? "vitesse " + etatPoele.vent : "—";
+  $("eMsg").textContent = etatPoele.msg || "—";
+  $("eVu").textContent = etatPoele.vu;
+  live({ k: "etat", ...etatPoele });
+}
+
+// ---------- Affichage ----------
+const heure = (t) => new Date(t).toLocaleTimeString("fr-FR") + "." + String(Math.floor((t % 1000) / 100));
+const nomSource = { tel: "Télécommande", poele: "Poêle", inconnu: "Inconnue" };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function visible(tr) {
+  const i = infos(tr);
+  if ($("fInterro").checked && i.type === "Interrogation") return false;
+  if ($("fInconnu").checked && i.src === "inconnu") return false;
+  return true;
+}
+function dureeMs(tr) { return Math.round(tr.seg.reduce((a, b) => a + b, 0) / 100) / 10; }
+
+function rendre() {
+  const v = $("vue");
+  $("bEmettreSel").disabled = !selection.size || !ecrivain;
+  if (vueActive === "fil") {
+    const lignes = [...trames.filter(visible).map((t) => ({ k: "t", t: t.t, o: t })), ...reperes.map((r) => ({ k: "r", t: r.t, o: r }))]
+      .sort((a, b) => b.t - a.t).slice(0, 600);
+    if (!lignes.length) { v.innerHTML = '<div class="vide">Aucune trame pour l\'instant. Connecte l\'ESP puis appuie sur un bouton de la télécommande.</div>'; return; }
+    v.innerHTML = `<table><thead><tr><th></th><th>Heure</th><th>Source</th><th>Type</th><th>RSSI</th><th>Durée</th><th>Octets / texte</th><th>Bits</th><th>Étiquette</th><th></th></tr></thead><tbody>${
+      lignes.map(({ k, o }) => {
+        if (k === "r") return `<tr class="repere"><td></td><td>${heure(o.t)}</td><td colspan="7">📍 ${esc(o.texte)}</td></tr>`;
+        const i = infos(o);
+        return `<tr class="${i.sig === refSig ? "ref" : ""} ${o.emis ? "emis" : ""}">
+          <td><input type="checkbox" data-sel="${o.id}" ${selection.has(o.id) ? "checked" : ""}></td>
+          <td>${heure(o.t)}</td><td><span class="badge ${i.src}">${nomSource[i.src]}</span></td><td>${i.type}</td>
+          <td>${o.rssi}</td><td>${dureeMs(o)} ms</td><td class="bits">${octetsHTML(i.sig)}</td><td class="bits">${bitsHTML(i.sig)}</td>
+          <td>${esc(etiquettes[i.sig] || "")}</td>
+          <td><button class="petit" data-tx="${o.id}">Émettre</button> <button class="petit" data-ref="${o.id}">Réf.</button></td></tr>`;
+      }).join("")}</tbody></table>`;
+  } else {
+    const groupes = new Map();
+    for (const t of trames) {
+      if (!visible(t)) continue;
+      const i = infos(t);
+      const g = groupes.get(i.sig) || { sig: i.sig, src: i.src, type: i.type, n: 0, premiere: t.t, derniere: t.t, exemple: t, rssi: t.rssi };
+      g.n++; g.derniere = Math.max(g.derniere, t.t); g.premiere = Math.min(g.premiere, t.t); g.rssi = Math.max(g.rssi, t.rssi);
+      groupes.set(i.sig, g);
+    }
+    const liste = [...groupes.values()].sort((a, b) => b.derniere - a.derniere);
+    if (!liste.length) { v.innerHTML = '<div class="vide">Aucune trame.</div>'; return; }
+    v.innerHTML = `<table><thead><tr><th>Nb</th><th>Source</th><th>Type</th><th>Première</th><th>Dernière</th><th>Octets / texte</th><th>Bits</th><th>Étiquette</th><th></th></tr></thead><tbody>${
+      liste.map((g) => `<tr class="${g.sig === refSig ? "ref" : ""}">
+        <td><b>${g.n}</b></td><td><span class="badge ${g.src}">${nomSource[g.src]}</span></td><td>${g.type}</td>
+        <td>${heure(g.premiere)}</td><td>${heure(g.derniere)}</td><td class="bits">${octetsHTML(g.sig)}</td><td class="bits">${bitsHTML(g.sig)}</td>
+        <td><input class="etiquette" type="text" data-etq="${esc(g.sig)}" value="${esc(etiquettes[g.sig] || "")}" placeholder="ex. commande +"></td>
+        <td><button class="petit" data-tx="${g.exemple.id}">Émettre</button> <button class="petit" data-ref="${g.exemple.id}">Réf.</button></td></tr>`).join("")}</tbody></table>`;
+  }
+}
+let rendrePrevu = false;
+function rendreBientot() { if (!rendrePrevu) { rendrePrevu = true; requestAnimationFrame(() => { rendrePrevu = false; rendre(); }); } }
+
+function journal(texte, cls) {
+  const j = $("journal"), d = document.createElement("div");
+  d.textContent = `${new Date().toLocaleTimeString("fr-FR")}  ${texte}`;
+  journalLignes.push(d.textContent);
+  live({ k: "journal", texte });
+  if (journalLignes.length > 500) journalLignes.shift();
+  if (cls) d.className = cls;
+  j.prepend(d);
+  while (j.childNodes.length > 300) j.lastChild.remove();
+}
+
+// ---------- Liaison série ----------
+async function connecter() {
+  if (port) { await deconnecter(); return; }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200, bufferSize: 65536 });
+    try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) {}
+    ecrivain = port.writable.getWriter();
+    $("etat").textContent = "Connecté"; $("etat").className = "pastille on";
+    $("bConnexion").textContent = "Déconnecter";
+    lire();
+    setTimeout(() => envoyer("?"), 500);
+    rendre();
+  } catch (e) { journal("Connexion impossible : " + e.message, "err"); port = null; }
+}
+async function deconnecter() {
+  try { ecrivain && ecrivain.releaseLock(); await port.close(); } catch (e) {}
+  port = null; ecrivain = null;
+  $("etat").textContent = "Déconnecté"; $("etat").className = "pastille";
+  $("bConnexion").textContent = "Connecter l'ESP";
+  rendre();
+}
+async function lire() {
+  const decodeur = new TextDecoderStream();
+  port.readable.pipeTo(decodeur.writable).catch(() => {});
+  const lecteur = decodeur.readable.getReader();
+  let reste = "";
+  try {
+    while (true) {
+      const { value, done } = await lecteur.read();
+      if (done) break;
+      reste += value;
+      let k;
+      while ((k = reste.indexOf("\n")) >= 0) { traiterLigne(reste.slice(0, k).trim()); reste = reste.slice(k + 1); }
+    }
+  } catch (e) { journal("Lecture interrompue : " + e.message, "err"); }
+  if (port) deconnecter();
+}
+function traiterLigne(l) {
+  if (!l) return;
+  if (l.startsWith("F ")) {
+    const p = l.split(" ");
+    const seg = (p[4] || "").split(",").map(Number).filter((x) => x > 0);
+    if (seg.length < 3) return;
+    const tr = { id: prochainId++, t: Date.now(), rssi: parseInt(p[2]), seg };
+    trames.push(tr);
+    const i = infos(tr);
+    live({ k: "trame", id: tr.id, src: i.src, type: i.type, rssi: tr.rssi, ms: dureeMs(tr), sig: i.sig, seg });
+    if (i.src === "poele") majEcran(tr);
+    if (trames.length > 5000) trames.splice(0, trames.length - 5000);
+    sauver(); rendreBientot();
+    return;
+  }
+  const m = l.match(/bruit=(-?\d+)/);
+  if (m) $("bruit").textContent = `bruit de fond ${m[1]} dBm`;
+  if (l.startsWith("I bruit=")) return;
+  journal(l, l.startsWith("E") ? "err" : l.startsWith("OK") ? "ok" : "");
+  if (attenteOK && (l.startsWith("OK T") || l.startsWith("E "))) { attenteOK(l); attenteOK = null; }
+}
+async function envoyer(ligne) {
+  if (!ecrivain) { journal("ESP non connecté", "err"); return; }
+  await ecrivain.write(new TextEncoder().encode(ligne + "\n"));
+}
+
+// ---------- Émission ----------
+function durees(tr) {
+  if ($("rForme").value === "brute") return nettoyer(tr.seg);
+  const U = unite(), b = infos(tr).emitBits, out = [];
+  let i = 0;
+  while (i < b.length) { let j = i; while (j < b.length && b[j] === b[i]) j++; out.push(Math.round((j - i) * U)); i = j; }
+  return out;
+}
+async function emettreTrame(tr) {
+  const d = durees(tr);
+  live({ k: "emission", id: tr.id, sig: infos(tr).sig, forme: $("rForme").value, durees: d });
+  return emettreDurees(d, tr);
+}
+async function emettreDurees(d, tr, discret = false) {
+  const rep = Math.max(1, Math.min(20, parseInt($("rRepet").value) || 1));
+  const pause = Math.max(0, parseInt($("rPause").value) || 0);
+  const fin = new Promise((ok) => { attenteOK = ok; setTimeout(() => ok("délai dépassé"), 8000); });
+  await envoyer(`T ${rep} ${pause} ${d.join(",")}`);
+  const r = await fin;
+  if (tr) tr.emis = true;
+  rendreBientot();
+  const finEmission = Date.now();
+  if (!discret) setTimeout(() => verifierReponse(finEmission, r), 1500);
+  return r;
+}
+function verifierReponse(t0, retourESP) {
+  // Le poêle répond en ~0,3 s à une trame de la télécommande qu'il a comprise.
+  // Une réponse précédée d'une trame de la vraie télécommande ne compte pas : c'est à elle qu'il répond.
+  const apres = trames.filter((t) => t.t > t0 && t.t < t0 + 1500).sort((a, b) => a.t - b.t);
+  let texte;
+  if (!retourESP.startsWith("OK")) texte = `❌ L'ESP n'a pas confirmé l'émission (${retourESP})`;
+  else if (!apres.length) texte = "❌ Aucune réponse du poêle dans les 1,5 s";
+  else if (infos(apres[0]).src === "poele") texte = `✅ Le poêle a répondu (${infos(apres[0]).type}, ${apres[0].rssi} dBm)`;
+  else texte = "⚠️ La vraie télécommande a parlé juste après : réponse impossible à attribuer";
+  ajouterRepere(texte, t0 + 1);
+  journal(texte, texte.startsWith("✅") ? "ok" : "err");
+  sauver(); rendreBientot();
+}
+async function emettre(liste) {
+  if (emissionEnCours) return;
+  if (!ecrivain) { journal("Connecte d'abord l'ESP", "err"); return; }
+  emissionEnCours = true;
+  $("etat").textContent = "Émission…"; $("etat").className = "pastille tx";
+  ajouterRepere(`Émission de ${liste.length} trame(s) par l'ESP`);
+  liste.sort((a, b) => a.t - b.t);
+  for (let k = 0; k < liste.length; k++) {
+    if (k) {
+      const ecart = Math.min(3000, Math.max(50, liste[k].t - liste[k - 1].t - dureeMs(liste[k - 1])));
+      await new Promise((r) => setTimeout(r, ecart));
+    }
+    await emettreTrame(liste[k]);
+  }
+  emissionEnCours = false;
+  $("etat").textContent = "Connecté"; $("etat").className = "pastille on";
+  sauver(); rendre();
+}
+
+function dureesDeOctets(octs) {
+  // Préambule 1010101, synchro de ~21 bits, puis les octets
+  const b = ("1010101" + "0".repeat(21) + bitsDeOctets(octs)).replace(/0+$/, "");
+  const U = unite(), out = [];
+  let i = 0;
+  while (i < b.length) { let j = i; while (j < b.length && b[j] === b[i]) j++; out.push(Math.round((j - i) * U)); i = j; }
+  return out;
+}
+async function emettreOctets(octs, avecSomme = true, discret = false) {
+  const tout = avecSomme ? [...octs, somme(octs)] : octs;
+  const hex = tout.map((v) => v.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+  const d = dureesDeOctets(tout);
+  live({ k: "emission", octets: hex, sig: bitsDeOctets(tout), forme: "composee", durees: d });
+  if (!discret) ajouterRepere(`Émission composée : ${hex}`);
+  return emettreDurees(d, null, discret);
+}
+// Interrogation automatique : discrète (pas de repère), et jamais pendant une autre émission
+setInterval(async () => {
+  if (!$("cAuto").checked || !ecrivain || emissionEnCours) return;
+  emissionEnCours = true;
+  try { await emettreOctets([idTel(), 0x3D, 0x00, 0x00], true, true); } finally { emissionEnCours = false; }
+}, 30000);
+const lireOctets = (txt) => txt.trim().split(/[\s,;]+/).filter(Boolean).map((x) => parseInt(x, 16)).filter((v) => v >= 0 && v <= 255);
+async function sequence(etapes) {
+  if (emissionEnCours) return;
+  if (!ecrivain) { journal("Connecte d'abord l'ESP", "err"); return; }
+  emissionEnCours = true;
+  $("etat").textContent = "Émission…"; $("etat").className = "pastille tx";
+  for (const e of etapes) {
+    if (e.attente) await new Promise((r) => setTimeout(r, e.attente));
+    else await emettreOctets(e);
+  }
+  emissionEnCours = false;
+  $("etat").textContent = "Connecté"; $("etat").className = "pastille on";
+  sauver(); rendre();
+}
+
+// Réponse du poêle arrivée après l'instant t0 (attend jusqu'à delai ms) ; rend ses octets ou null
+async function reponsePoele(t0, delai = 1500) {
+  const fin = Date.now() + delai;
+  while (Date.now() < fin) {
+    const r = trames.find((t) => t.t > t0 && infos(t).src === "poele");
+    if (r) {
+      await new Promise((ok) => setTimeout(ok, 150));  // laisser arriver la suite d'une trame coupée
+      return octetsDe(infos(r).sig).map((x) => x.v);
+    }
+    await new Promise((ok) => setTimeout(ok, 50));
+  }
+  return null;
+}
+const texteDe = (o) => (o || []).filter((v) => v >= 32 && v < 127).map((v) => String.fromCharCode(v)).join("");
+// Menus du poêle : touche qui l'ouvre et 5e octet de l'écran « REGLER … » (B5 20 20 20 <marque> <valeur>)
+const MENUS = {
+  ventilateur: { touche: 0x84, marque: 0x00, nom: "Ventilateur", valeur: "vitesse" },
+  puissance: { touche: 0x98, marque: 0x50, nom: "Puissance", valeur: "P" },
+};
+// Le menu est géré par le poêle et sa touche l'ouvre OU le referme (bascule, constaté le 23/10/2026) :
+// on rappuie tant que l'écran « REGLER » n'est pas affiché, puis on envoie la touche et on vérifie la valeur.
+async function reglerVentilateur(touche, nom) { return reglerMenu(MENUS.ventilateur, touche, nom); }
+async function reglerMenu(menu, touche, nom) {
+  if (emissionEnCours) return;
+  if (!ecrivain) { journal("Connecte d'abord l'ESP", "err"); return; }
+  emissionEnCours = true;
+  $("etat").textContent = "Réglage…"; $("etat").className = "pastille tx";
+  let avant = null, apres = null, bilan;
+  try {
+    for (let essai = 1; essai <= 3 && avant === null; essai++) {
+      const t0 = Date.now();
+      await emettreOctets([idTel(), 0x3D, 0x00, menu.touche]);
+      const o = await reponsePoele(t0);
+      // Écran de réglage = « B5 20 20 20 00 <vitesse> … REGLER … » ; la réponse longue arrive parfois coupée
+      // en deux et le texte manque alors : on se fie au début de trame, pas au mot REGLER.
+      if (o && o[0] === 0xB5 && o[1] === 0x20 && o[4] === menu.marque && o.length > 5) avant = o[5];
+      else journal(`Menu ${menu.nom.toLowerCase()} pas ouvert (essai ${essai}) : le poêle affiche « ${texteDe(o).trim() || "rien"} »`, "err");
+    }
+    if (avant === null) bilan = `❌ Impossible d'ouvrir le menu ${menu.nom.toLowerCase()}`;
+    else {
+      for (let essai = 1; essai <= 2 && apres === null; essai++) {
+        const t0 = Date.now();
+        await emettreOctets([idTel(), 0xBD, 0x00, touche]);
+        const o = await reponsePoele(t0);
+        if (o && o[0] === 0xB5 && o[1] === 0x20 && o[4] === menu.marque && o.length > 5) apres = o[5];
+      }
+      const N = menu.nom, V = menu.valeur;
+      bilan = apres === null ? `❌ ${N} ${nom} : pas de réponse du poêle (${V} ${avant})`
+        : apres !== avant ? `✅ ${N} ${nom} : ${V} ${avant} → ${apres}`
+        : `⚠️ ${N} ${nom} : ${V} inchangée (${avant}, limite atteinte ?)`;
+    }
+  } finally {
+    emissionEnCours = false;
+    $("etat").textContent = "Connecté"; $("etat").className = "pastille on";
+  }
+  ajouterRepere(bilan);
+  journal(bilan, bilan.startsWith("✅") ? "ok" : "err");
+  sauver(); rendre();
+}
+
+// ---------- Événements ----------
+$("bConnexion").onclick = connecter;
+$("bLive").onclick = activerLive;
+$("bComposer").onclick = () => { const o = lireOctets($("cOctets").value); if (o.length) sequence([o]); };
+$("bVentPlus").onclick = () => reglerVentilateur(0x88, "+");
+$("bVentMoins").onclick = () => reglerVentilateur(0x8C, "−");
+$("bPuisPlus").onclick = () => reglerMenu(MENUS.puissance, 0x88, "+");
+$("bPuisMoins").onclick = () => reglerMenu(MENUS.puissance, 0x8C, "−");
+$("bInterroger").onclick = () => sequence([[idTel(), 0x3D, 0x00, 0x00]]);
+// Essai : une seule trame 61, puis interrogations à 3 s et 12 s pour voir si le poêle réagit avec retard
+$("bTrame61").onclick = async () => {
+  if (emissionEnCours) return;
+  if (!ecrivain) { journal("Connecte d'abord l'ESP", "err"); return; }
+  if (!confirm("Envoyer UNE trame 61 seule (C5 BE 00 61) ? Si elle suffit, le poêle peut s'allumer ou s'éteindre.")) return;
+  emissionEnCours = true;
+  $("etat").textContent = "Trame 61…"; $("etat").className = "pastille tx";
+  ajouterRepere("Trame 61 seule envoyée par l'ESP");
+  try {
+    await emettreOctets([idTel(), 0xBE, 0x00, 0x61], true, true);
+    for (const attente of [3000, 9000]) {
+      await new Promise((r) => setTimeout(r, attente));
+      await emettreOctets([idTel(), 0x3D, 0x00, 0x00], true, true);
+    }
+  } finally {
+    emissionEnCours = false;
+    $("etat").textContent = "Connecté"; $("etat").className = "pastille on";
+  }
+  ajouterRepere("Essai trame 61 terminé (interrogations à +3 s et +12 s)");
+  sauver(); rendre();
+};
+// Appui long sur ⏻, calqué sur la vraie télécommande (capture du 23/10/2026, 13 h 04 min 46 s) :
+// touche 81, puis 11 trames 61 « bouton maintenu » sur ~4 s, octet d'état alternant comme l'original.
+$("bMarcheArret").onclick = async () => {
+  if (emissionEnCours) return;
+  if (!ecrivain) { journal("Connecte d'abord l'ESP", "err"); return; }
+  if (!confirm("Envoyer un APPUI LONG sur ⏻ ? Le poêle va s'allumer s'il est éteint, ou s'éteindre s'il est allumé.")) return;
+  emissionEnCours = true;
+  $("etat").textContent = "Appui long…"; $("etat").className = "pastille tx";
+  ajouterRepere("Appui long ⏻ envoyé par l'ESP");
+  try {
+    await emettreOctets([idTel(), 0x3E, 0x00, 0x81], true, true);
+    const etats = [0xBE, 0xBE, 0xBE, 0xBE, 0x3E, 0x3E, 0x3E, 0x3E, 0xBE, 0xBE, 0x3E];
+    for (const e of etats) {
+      await new Promise((r) => setTimeout(r, 300));
+      await emettreOctets([idTel(), e, 0x00, 0x61], true, true);
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+    await emettreOctets([idTel(), 0x3D, 0x00, 0x00], true, true);
+  } finally {
+    emissionEnCours = false;
+    $("etat").textContent = "Connecté"; $("etat").className = "pastille on";
+  }
+  ajouterRepere("Appui long ⏻ terminé");
+  sauver(); rendre();
+};
+$("bRepere").onclick = () => {
+  const texte = $("texteRepere").value.trim() || "Repère";
+  ajouterRepere(texte);
+  $("texteRepere").value = ""; sauver(); rendre();
+};
+$("texteRepere").onkeydown = (e) => { if (e.key === "Enter") $("bRepere").click(); };
+$("bAppliquer").onclick = async () => {
+  await envoyer("S " + $("rSeuil").value);
+  await envoyer("P " + $("rPuissance").value);
+  await envoyer("Q " + $("rFrequence").value);
+};
+$("rUnite").onchange = () => { cacheAnalyse.clear(); rendre(); };
+$("fInterro").onchange = $("fInconnu").onchange = rendre;
+document.querySelectorAll(".onglets button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".onglets button").forEach((x) => x.classList.toggle("actif", x === b));
+  vueActive = b.dataset.vue; rendre();
+});
+$("vue").addEventListener("click", (e) => {
+  const tx = e.target.dataset.tx, ref = e.target.dataset.ref, sel = e.target.dataset.sel;
+  if (tx) emettre([trames.find((t) => t.id == tx)]);
+  if (ref) { const s = infos(trames.find((t) => t.id == ref)).sig; refSig = refSig === s ? null : s; sauver(); rendre(); }
+  if (sel) { e.target.checked ? selection.add(+sel) : selection.delete(+sel); $("bEmettreSel").disabled = !selection.size || !ecrivain; }
+});
+$("vue").addEventListener("change", (e) => {
+  const s = e.target.dataset.etq;
+  if (s !== undefined) { etiquettes[s] = e.target.value.trim(); if (!etiquettes[s]) delete etiquettes[s]; sauver(); }
+});
+$("bEmettreSel").onclick = () => emettre(trames.filter((t) => selection.has(t.id)));
+$("bEffacer").onclick = () => {
+  if (!confirm("Effacer toutes les trames et repères de la session ? (les étiquettes sont gardées)")) return;
+  trames = []; reperes = []; selection.clear(); cacheAnalyse.clear(); sauver(); rendre();
+};
+$("bExporter").onclick = () => {
+  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+  const nom = `captures-poele-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}h${p(d.getMinutes())}.json`;
+  const blob = new Blob([JSON.stringify({ version: 1, unite: unite(), trames, reperes, etiquettes, journal: journalLignes }, null, 1)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nom; a.click();
+};
+$("bImporter").onclick = () => $("fichier").click();
+$("fichier").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    for (const t of d.trames || []) trames.push({ ...t, id: prochainId++ });
+    for (const r of d.reperes || []) reperes.push({ ...r, id: prochainId++ });
+    Object.assign(etiquettes, d.etiquettes || {});
+    trames.sort((a, b) => a.t - b.t); sauver(); rendre();
+    journal(`Importé : ${(d.trames || []).length} trames`, "ok");
+  } catch (err) { journal("Fichier illisible : " + err.message, "err"); }
+  e.target.value = "";
+};
+
+if (!("serial" in navigator)) { $("pasSerial").hidden = false; $("bConnexion").disabled = true; }
+charger(); rendre();
+for (const t of trames) if (infos(t).src === "poele") majEcran(t);
+if (parServeur) {
+  $("bLive").textContent = "Journal en direct : actif (0)"; $("bLive").classList.add("principal"); $("bLive").disabled = true;
+  live({ k: "debut", texte: "Page chargée depuis le serveur local" });
+}
+</script>
+</body>
+</html>

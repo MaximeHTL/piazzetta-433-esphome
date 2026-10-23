@@ -1,0 +1,87 @@
+# Example ESPHome configuration for the Piazzetta 433 MHz component.
+# Hardware: ESP32 DevKit + Ra-02 (SX1278) — wiring in docs/hardware.md.
+# Copy this file and the components/ folder into your ESPHome configuration folder,
+# put your secrets in ESPHome's secrets.yaml, then install (first time over USB).
+
+esphome:
+  name: piazzetta-stove
+  friendly_name: Pellet stove
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino          # RadioLib is used through the Arduino framework
+
+logger:
+  level: DEBUG             # DEBUG logs every decoded frame in hex — very useful at first
+
+api:
+  encryption:
+    key: !secret stove_api_key          # generate one: https://esphome.io/components/api/
+
+ota:
+  - platform: esphome
+    password: !secret stove_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Piazzetta-Stove-Fallback"
+    password: !secret stove_ap_password
+
+captive_portal:
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [piazzetta]
+  # or straight from GitHub:
+  # - source:
+  #     type: git
+  #     url: https://github.com/MaximeHTL/piazzetta-433-esphome
+  #     path: esphome/components
+  #   components: [piazzetta]
+
+piazzetta:
+  # --- Radio / installation (defaults shown) ---
+  remote_id: 0xC5            # first byte of YOUR remote's frames — find it with the test bench (docs/capture-guide.md)
+  frequence: 433.92          # MHz
+  puissance_emission: 10     # transmit power, dBm (2..17)
+  seuil_rssi: -78            # capture threshold, dBm
+  intervalle_interrogation: 30s
+  # pin_sck: 18, pin_miso: 19, pin_mosi: 23, pin_cs: 5, pin_rst: 14, pin_dio0: 26, pin_dio1: 33, pin_dio2: 32
+
+  # --- Entities (all optional) ---
+  temperature:
+    name: "Room temperature (remote)"
+  phase:
+    name: "Phase"                # main screen text: "NIVEAU P1", "ALLUMAGE PHASE I", "OFF"…
+  etat:
+    name: "State"                # Arrêt / Allumage / Marche / Nettoyage / Extinction / Défaut / Autre
+  ecran_ligne1:
+    name: "Screen line 1"        # live copy of the remote's screen (menus included)
+  ecran_ligne2:
+    name: "Screen line 2"
+  ecran_bas:
+    name: "Screen bottom"
+  heure:
+    name: "Stove clock"
+  rssi:
+    name: "Stove radio signal"
+  joignable:
+    name: "Stove reachable"
+  puissance:
+    name: "Power"                # 1..4, set = menu + steps, verified
+  ventilateur:
+    name: "Fan"                  # 1..4
+  interroger:
+    name: "Poll stove"
+  marche_arret:
+    name: "On-off"               # TOGGLE (long press on ⏻) — confirm before pressing!
+
+sensor:
+  - platform: wifi_signal
+    name: "Wi-Fi signal"
+    update_interval: 60s

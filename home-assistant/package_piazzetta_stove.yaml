@@ -1,0 +1,130 @@
+# Home Assistant package for the Piazzetta stove (ESPHome component).
+# Install: configuration.yaml ->
+#   homeassistant:
+#     packages: !include_dir_named packages
+# then copy this file to /config/packages/ and run "Check configuration" + reload template entities.
+#
+# Entity IDs below assume the example ESPHome config (friendly_name "Pellet stove"):
+#   sensor.pellet_stove_state, number.pellet_stove_power, number.pellet_stove_fan, button.pellet_stove_on_off
+# Replace sensor.your_room_temperature / sensor.your_outdoor_temperature with your own sensors.
+#
+# NOTE: the "State" values come from the stove's French screen texts:
+#   Arrêt (off) · Allumage (igniting) · Marche (running) · Nettoyage (burn-pot cleaning) · Extinction · Défaut (error)
+
+template:
+  - switch:
+      # Heater switch for the generic thermostat.
+      # The ESPHome on/off button is a TOGGLE (like the ⏻ key): send it only when the stove state
+      # justifies it, otherwise "turn on" would switch OFF a stove that is already running.
+      - name: "Pellet stove heater"
+        unique_id: pellet_stove_heater_switch
+        icon: mdi:fireplace
+        state: "{{ states('sensor.pellet_stove_state') in ['Marche', 'Allumage'] }}"
+        availability: "{{ states('sensor.pellet_stove_state') not in ['unknown', 'unavailable'] }}"
+        turn_on:
+          - if:
+              - condition: state
+                entity_id: sensor.pellet_stove_state
+                state: "Arrêt"
+            then:
+              - action: button.press
+                target:
+                  entity_id: button.pellet_stove_on_off
+        turn_off:
+          - if:
+              - condition: state
+                entity_id: sensor.pellet_stove_state
+                state:
+                  - "Marche"
+                  - "Allumage"
+            then:
+              - action: button.press
+                target:
+                  entity_id: button.pellet_stove_on_off
+
+  # --- Long-term data collection (for a future "smart" power/fan regulation) ---
+  # "measurement" sensors: HA keeps their statistics forever (5-min then hourly means).
+  # 0/1 sensors: their mean = fraction of time spent in that state.
+  - sensor:
+      - name: "Stove data indoor temperature"
+        unique_id: stove_data_indoor_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('sensor.your_room_temperature') | float(0) }}"
+        availability: "{{ has_value('sensor.your_room_temperature') }}"
+      - name: "Stove data outdoor temperature"
+        unique_id: stove_data_outdoor_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('sensor.your_outdoor_temperature') | float(0) }}"
+        availability: "{{ has_value('sensor.your_outdoor_temperature') }}"
+      - name: "Stove data running"
+        unique_id: stove_data_running
+        state_class: measurement
+        state: "{{ 1 if is_state('sensor.pellet_stove_state', 'Marche') else 0 }}"
+        availability: "{{ has_value('sensor.pellet_stove_state') }}"
+      - name: "Stove data igniting"
+        unique_id: stove_data_igniting
+        state_class: measurement
+        state: "{{ 1 if is_state('sensor.pellet_stove_state', 'Allumage') else 0 }}"
+        availability: "{{ has_value('sensor.pellet_stove_state') }}"
+      - name: "Stove data residual heat"
+        unique_id: stove_data_residual_heat
+        state_class: measurement
+        # burn-pot cleaning / shutdown: no more pellets, but the stove still heats
+        state: "{{ 1 if states('sensor.pellet_stove_state') in ['Nettoyage', 'Extinction'] else 0 }}"
+        availability: "{{ has_value('sensor.pellet_stove_state') }}"
+      - name: "Stove data effective power"
+        unique_id: stove_data_effective_power
+        state_class: measurement
+        state: >-
+          {{ states('number.pellet_stove_power') | int(0)
+             if is_state('sensor.pellet_stove_state', 'Marche') else 0 }}
+        availability: "{{ has_value('sensor.pellet_stove_state') and has_value('number.pellet_stove_power') }}"
+      - name: "Stove data effective fan"
+        unique_id: stove_data_effective_fan
+        state_class: measurement
+        state: >-
+          {{ states('number.pellet_stove_fan') | int(0)
+             if is_state('sensor.pellet_stove_state', 'Marche') else 0 }}
+        availability: "{{ has_value('sensor.pellet_stove_state') and has_value('number.pellet_stove_fan') }}"
+      - name: "Stove data setpoint"
+        unique_id: stove_data_setpoint
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ state_attr('climate.pellet_stove', 'temperature') | float(0) }}"
+        availability: "{{ state_attr('climate.pellet_stove', 'temperature') is number }}"
+      - name: "Stove data thermostat active"
+        unique_id: stove_data_thermostat_active
+        state_class: measurement
+        state: "{{ 1 if is_state('climate.pellet_stove', 'heat') else 0 }}"
+      - name: "Stove data people home"
+        unique_id: stove_data_people_home
+        state_class: measurement
+        state: "{{ states.person | selectattr('state', 'eq', 'home') | list | count }}"
+
+# The thermostat itself (climate.pellet_stove) is easiest to create in the UI:
+# Settings -> Devices & services -> Helpers -> Create helper -> Generic thermostat. See docs/home-assistant.md.
+# YAML equivalent (requires a restart the first time):
+#
+# climate:
+#   - platform: generic_thermostat
+#     name: "Pellet stove"
+#     unique_id: pellet_stove_thermostat
+#     heater: switch.pellet_stove_heater
+#     target_sensor: sensor.your_room_temperature
+#     min_temp: 15
+#     max_temp: 25
+#     target_temp: 21
+#     cold_tolerance: 1.0
+#     hot_tolerance: 1.0
+#     min_cycle_duration:
+#       minutes: 60
+#     precision: 0.5
+#     target_temp_step: 0.5
+#     comfort_temp: 21
+#     eco_temp: 19
+#     away_temp: 16

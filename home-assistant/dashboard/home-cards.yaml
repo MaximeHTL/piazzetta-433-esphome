@@ -1,0 +1,68 @@
+# Compact cards for a "sections" dashboard (needs Mushroom: https://github.com/piitaya/lovelace-mushroom).
+# Layout validated on the reference installation:
+#   [ thermostat (full width) ]
+#   [ on/off (full width) — subtitle = text on the stove screen ]
+#   [ power − n + ] [ fan − n + ]
+
+# Thermostat (like a heat-pump card); tap = stove page, hold = settings
+- type: custom:mushroom-climate-card
+  entity: climate.pellet_stove
+  name: Stove thermostat
+  icon: mdi:fireplace
+  hvac_modes: [heat, "off"]
+  show_temperature_control: true
+  collapsible_controls: false
+  tap_action:
+    action: navigate
+    navigation_path: /dashboard-name/stove      # adapt to your dashboard path
+  hold_action:
+    action: more-info
+  grid_options:
+    columns: full
+
+# On/off: ONE toggle button, like the ⏻ key of the remote, always available (useful to force a stop
+# after a failed ignition and restart). Tap = toggle with confirmation; hold = state history.
+- type: custom:mushroom-template-card
+  entity: sensor.pellet_stove_state
+  primary: On / off
+  secondary: >-
+    {{ (states('sensor.pellet_stove_screen_line_1') ~ ' ' ~ states('sensor.pellet_stove_screen_line_2')) | trim }}
+  icon: mdi:power
+  icon_color: >-
+    {% set e = states('sensor.pellet_stove_state') %}
+    {% if e == 'Marche' %}green{% elif e in ['Allumage', 'Nettoyage', 'Extinction'] %}orange
+    {% elif e == 'Défaut' %}red{% else %}grey{% endif %}
+  tap_action:
+    action: perform-action
+    perform_action: button.press
+    target:
+      entity_id: button.pellet_stove_on_off
+    confirmation:
+      text: Send on/off to the stove (like a long press on ⏻)?
+  hold_action:
+    action: more-info
+  grid_options:
+    columns: full
+
+# Power and fan on one line: icon + − value +, no title (titles get truncated)
+- type: custom:mushroom-number-card
+  entity: number.pellet_stove_power
+  icon: mdi:fire
+  icon_color: deep-orange
+  display_mode: buttons
+  layout: horizontal
+  primary_info: none
+  secondary_info: none
+  grid_options:
+    columns: 6
+
+- type: custom:mushroom-number-card
+  entity: number.pellet_stove_fan
+  icon: mdi:fan
+  icon_color: blue
+  display_mode: buttons
+  layout: horizontal
+  primary_info: none
+  secondary_info: none
+  grid_options:
+    columns: 6
