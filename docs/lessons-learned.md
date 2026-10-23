@@ -37,6 +37,7 @@ In the order they were met. Each one cost time; together they are probably the m
 
 * **A toggle is not a switch.** The generic thermostat needs a switch; build it with state guards (see [home-assistant.md](home-assistant.md)).
 * **Generic thermostat created at the minimum set-point** → switching to *Heat* would have stopped a running stove. Set the set-point first.
+* **The minimum cycle restarts at every change of the heater switch's state**, including going through "unavailable" when the module briefly disconnects, and when template entities are reloaded. Make the template switch keep its last known state during outages (no `availability` template), and avoid reloading templates while testing the thermostat.
 * `generic_thermostat.reload` does not exist until the integration has been loaded once → create it as a UI helper (no restart needed).
 * Temperature sensors of some integrations have **no `state_class`** → no long-term statistics. Re-expose them as measurement sensors if you want to analyse months of data.
 * button-card styles must be lists of `{property: value}` pairs; strings like `"color: red"` are silently ignored.

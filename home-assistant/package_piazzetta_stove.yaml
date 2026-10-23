@@ -19,8 +19,12 @@ template:
       - name: "Pellet stove heater"
         unique_id: pellet_stove_heater_switch
         icon: mdi:fireplace
-        state: "{{ states('sensor.pellet_stove_state') in ['Marche', 'Allumage'] }}"
-        availability: "{{ states('sensor.pellet_stove_state') not in ['unknown', 'unavailable'] }}"
+        # Keep the last known state during a short module outage: going through "unavailable" changes
+        # the switch state and RESETS the thermostat's minimum cycle timer. Hence no availability template.
+        state: >-
+          {% set e = states('sensor.pellet_stove_state') %}
+          {% if e in ['unknown', 'unavailable'] %}{{ is_state('switch.pellet_stove_heater', 'on') }}
+          {% else %}{{ e in ['Marche', 'Allumage'] }}{% endif %}
         turn_on:
           - if:
               - condition: state
