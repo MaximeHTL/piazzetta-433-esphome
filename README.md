@@ -5,6 +5,12 @@ No wiring into the stove, no modification of the stove: an ESP32 and a 433 MHz r
 
 🇫🇷 **Version française : [README.fr.md](README.fr.md)**
 
+<p align="center">
+  <img src="docs/images/remote-f0203-1480v3.jpg" alt="Piazzetta F0203-1480V3 remote" height="360">
+  &nbsp;&nbsp;
+  <img src="docs/images/wiring.svg" alt="Wiring ESP32 DevKit to Ra-02" height="360">
+</p>
+
 ---
 
 > [!WARNING]
@@ -50,7 +56,7 @@ Full details: **[docs/protocol.md](docs/protocol.md)**.
 | 433 MHz antenna | a real 433 MHz antenna (spring or ¼-wave wire, 17.3 cm) — **never transmit without antenna** |
 | USB power supply | the module stays powered permanently |
 
-Wiring and tips: **[docs/hardware.md](docs/hardware.md)**.
+Wiring diagram, references and tips: **[docs/hardware.md](docs/hardware.md)**.
 
 ## Compatibility
 

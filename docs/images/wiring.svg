@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 470" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Wiring: ESP32 DevKit to Ra-02 (SX1278)</title>
+  <rect width="760" height="470" fill="#ffffff"/>
+  <text x="380" y="34" text-anchor="middle" font-size="20" font-weight="700" fill="#1d2330">Wiring — ESP32 DevKit ↔ Ra-02 (SX1278, 433 MHz)</text>
+
+  <!-- ESP32 -->
+  <rect x="40" y="60" width="210" height="370" rx="10" fill="#1f2a44" stroke="#0f172a" stroke-width="2"/>
+  <text x="145" y="92" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">ESP32 DevKit</text>
+  <text x="145" y="112" text-anchor="middle" font-size="12" fill="#c7d2fe">ESP32-WROOM-32</text>
+
+  <!-- Ra-02 -->
+  <rect x="510" y="60" width="210" height="370" rx="10" fill="#2f5d3a" stroke="#14321c" stroke-width="2"/>
+  <text x="615" y="92" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">Ra-02</text>
+  <text x="615" y="112" text-anchor="middle" font-size="12" fill="#d1fae5">SX1278 · LoRa/FSK/OOK</text>
+  <!-- antenna -->
+  <line x1="700" y1="60" x2="700" y2="20" stroke="#14321c" stroke-width="3"/>
+  <path d="M700 20 l-6 6 l12 4 l-12 4 l12 4" fill="none" stroke="#14321c" stroke-width="2"/>
+  <text x="690" y="52" text-anchor="end" font-size="11" fill="#14321c">433 MHz antenna</text>
+
+  <g font-size="14" fill="#ffffff">
+    <!-- rows: y positions -->
+    <text x="235" y="150" text-anchor="end">GPIO 18</text><text x="525" y="150">SCK</text>
+    <text x="235" y="182" text-anchor="end">GPIO 19</text><text x="525" y="182">MISO</text>
+    <text x="235" y="214" text-anchor="end">GPIO 23</text><text x="525" y="214">MOSI</text>
+    <text x="235" y="246" text-anchor="end">GPIO 5</text><text x="525" y="246">NSS (CS)</text>
+    <text x="235" y="278" text-anchor="end">GPIO 14</text><text x="525" y="278">RST</text>
+    <text x="235" y="310" text-anchor="end">GPIO 26</text><text x="525" y="310">DIO0</text>
+    <text x="235" y="342" text-anchor="end">GPIO 33</text><text x="525" y="342">DIO1</text>
+    <text x="235" y="374" text-anchor="end" font-weight="700">GPIO 32</text><text x="525" y="374" font-weight="700">DIO2 (OOK data)</text>
+    <text x="235" y="404" text-anchor="end">3V3</text><text x="525" y="404">3.3V</text>
+    <text x="150" y="424" text-anchor="end">GND</text><text x="620" y="424">GND</text>
+  </g>
+
+  <g stroke-width="3" fill="none">
+    <line x1="250" y1="145" x2="510" y2="145" stroke="#f59e0b"/>
+    <line x1="250" y1="177" x2="510" y2="177" stroke="#3b82f6"/>
+    <line x1="250" y1="209" x2="510" y2="209" stroke="#8b5cf6"/>
+    <line x1="250" y1="241" x2="510" y2="241" stroke="#06b6d4"/>
+    <line x1="250" y1="273" x2="510" y2="273" stroke="#a3a3a3"/>
+    <line x1="250" y1="305" x2="510" y2="305" stroke="#a3a3a3" stroke-dasharray="6 4"/>
+    <line x1="250" y1="337" x2="510" y2="337" stroke="#a3a3a3" stroke-dasharray="6 4"/>
+    <line x1="250" y1="369" x2="510" y2="369" stroke="#16a34a" stroke-width="4"/>
+    <line x1="250" y1="399" x2="510" y2="399" stroke="#dc2626"/>
+    <path d="M160 430 V450 H600 V430" stroke="#111827"/>
+  </g>
+  <text x="380" y="395" text-anchor="middle" font-size="12" fill="#dc2626" font-weight="700">3.3 V only — never 5 V</text>
+  <text x="380" y="465" text-anchor="middle" font-size="12" fill="#475569">Dashed: wired but unused by the logic · Pins configurable (ESPHome pin_* options, top of the test-bench sketch)</text>
+</svg>

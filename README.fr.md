@@ -5,6 +5,12 @@ Aucun câblage dans le poêle, aucune modification du poêle : un ESP32 et un mo
 
 🇬🇧 **English version: [README.md](README.md)** — la documentation détaillée (`docs/`) est en anglais.
 
+<p align="center">
+  <img src="docs/images/remote-f0203-1480v3.jpg" alt="Télécommande Piazzetta F0203-1480V3" height="360">
+  &nbsp;&nbsp;
+  <img src="docs/images/wiring.svg" alt="Câblage ESP32 DevKit ↔ Ra-02" height="360">
+</p>
+
 ---
 
 > [!WARNING]

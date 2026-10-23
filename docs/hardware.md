@@ -9,12 +9,20 @@
 | Antenna | 433 MHz antenna on the Ra-02 IPEX/U.FL connector, or a 17.3 cm wire (¼ wave) | check it really is a **433 MHz** antenna (some listings say "2.4G" by mistake) |
 | Power | any USB charger (5 V, ≥ 500 mA) | permanent supply |
 
+### Identifying the parts
+
+* ESP32 DevKit: Espressif's reference board family — [ESP32-DevKitC user guide](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/index.html). Most "ESP32 DevKit V1" clones (30 or 38 pins, CP210x or CH340 USB chip) work the same.
+* Ra-02: a small shielded module by AI-Thinker carrying a Semtech **SX1278** — [SX1278 product page](https://www.semtech.com/products/wireless-rf/lora-connect/sx1278). The shield is usually marked "Ra-02 … LoRa/FSK/OOK"; it has a U.FL/IPEX antenna connector and 2 mm-pitch pads (a small adapter board or careful soldering is needed).
+
 ### Radios that do **not** work
 
 * **Heltec WiFi LoRa 32 V3** (SX1262): the SX1262 only demodulates LoRa and (G)FSK, **not OOK**.
 * Cheap superheterodyne receivers (RXB6…) could receive but cannot transmit; a CC1101 module would probably work (OOK RX/TX) but is untested here — the component uses RadioLib's SX1278 driver.
 
 ## Wiring (ESP32 VSPI)
+
+![Wiring ESP32 DevKit to Ra-02](images/wiring.svg)
+
 
 | Ra-02 pin | ESP32 GPIO | Role |
 | --- | --- | --- |
@@ -42,4 +50,6 @@ Before the first power-up: with a multimeter in continuity mode, all GND pads mu
 
 ## Photos
 
-The remote: [images/remote-f0203-1480v3.jpg](images/remote-f0203-1480v3.jpg) — keys: fan (✻, top left), + / −, thermometer (top right), flame (power, bottom left), clock (bottom right); soft keys ★ and ⏻ under the screen.
+![The F0203-1480V3 remote](images/remote-f0203-1480v3.jpg)
+
+The remote — keys: fan (✻, top left), + / −, thermometer (top right), flame (power, bottom left), clock (bottom right); soft keys ★ and ⏻ under the screen.
