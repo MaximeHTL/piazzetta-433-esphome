@@ -138,8 +138,9 @@ class PiazzettaComponent : public Component {
   uint32_t dernier_joignable_ms_{0};
   bool ecran_recu_{false};
   bool ecran_principal_recu_{false};
-  bool synchro_faite_{false};
-  uint32_t demarrage_ms_{0};
+  uint32_t prochaine_synchro_ms_{0};
+  bool marche_arret_envoye_{false};
+  uint32_t dernier_marche_arret_ms_{0};
   Ecran dernier_ecran_;
 
   // Tache en cours (une seule commande radio a la fois)

@@ -21,9 +21,11 @@ template:
         icon: mdi:fireplace
         # Keep the last known state during a short module outage: going through "unavailable" changes
         # the switch state and RESETS the thermostat's minimum cycle timer. Hence no availability template.
+        # Same for "Autre": a corrupted radio frame (e.g. "NIVEA? P1") or a clock/language menu screen
+        # must not flip the switch either.
         state: >-
           {% set e = states('sensor.pellet_stove_state') %}
-          {% if e in ['unknown', 'unavailable'] %}{{ is_state('switch.pellet_stove_heater', 'on') }}
+          {% if e in ['unknown', 'unavailable', 'Autre'] %}{{ is_state('switch.pellet_stove_heater', 'on') }}
           {% else %}{{ e in ['Marche', 'Allumage'] }}{% endif %}
         turn_on:
           - if:

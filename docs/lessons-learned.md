@@ -14,6 +14,7 @@ In the order they were met. Each one cost time; together they are probably the m
 * **Arduino IDE does not rebuild libraries when `build_opt.h` changes.** A changed compile flag had no effect until the sketch's build cache (`%LOCALAPPDATA%\arduino\sketches\<hash>`) was deleted.
 * **The OOK slicer chatters in noise.** Start a frame only if the RSSI is above a threshold, and end it after a period without signal — otherwise you get endless garbage frames.
 * **The stove pauses inside its long screen frames.** With a 15 ms end-of-frame gap, screens were split in two ("unknown" second half). **40 ms** keeps them whole.
+* **"Stove unreachable" after putting the module in a case — the USB cable.** Wi-Fi was fine and the stove still answered every poll, but at −75 dBm instead of −55: frames arrived truncated, failed the checksum and were dropped. Moving the antenna out of the case gained only 1–2 dB; going back to the previous USB cable restored −53 dBm. At 433 MHz the supply cable is part of the antenna system and can carry noise. Read the RSSI in the DEBUG logs before suspecting the firmware.
 
 ## Decoding
 
@@ -31,13 +32,16 @@ In the order they were met. Each one cost time; together they are probably the m
 ## Reading the state
 
 * **A poll does not always return the screen.** The stove sends the full screen only when it changed (or after a key); otherwise only the clock. A hypothesis linking this to the remote's state byte was tested and **refuted**. Fix for start-up: press the fan key once, without +/−.
+* **One missed screen = a frozen state.** Since the stove does not repeat an unchanged screen, a single lost frame left Home Assistant showing "CONTROLE" while the stove was cleaning. Fix: repeat the fan-key resynchronisation when no main screen has been seen for a while.
+* **The 8-bit checksum is weak.** A corrupted screen ("NIVEA? P1") once passed it. Do not let an unrecognised state drive anything (see Home Assistant below).
 * The remote updates its display only **when it polls**: after a command it can take up to ≈ 44 s to show the new value although the stove applied it immediately.
 
 ## Home Assistant
 
 * **A toggle is not a switch.** The generic thermostat needs a switch; build it with state guards (see [home-assistant.md](home-assistant.md)).
+* **State guards are not enough: debounce the toggle.** The state lags a few seconds behind a press, so two clicks on "off" plus the thermostat going to *Off* sent three toggles in 47 s: shutdown, then a new ignition. The component now ignores on/off requests for 90 s after a press.
 * **Generic thermostat created at the minimum set-point** → switching to *Heat* would have stopped a running stove. Set the set-point first.
-* **The minimum cycle restarts at every change of the heater switch's state**, including going through "unavailable" when the module briefly disconnects, and when template entities are reloaded. Make the template switch keep its last known state during outages (no `availability` template), and avoid reloading templates while testing the thermostat.
+* **The minimum cycle restarts at every change of the heater switch's state**, including going through "unavailable" when the module briefly disconnects, and when template entities are reloaded. Make the template switch keep its last known state during outages (no `availability` template), and avoid reloading templates while testing the thermostat. The same applies to an unrecognised state (`Autre`): keep the last state.
 * `generic_thermostat.reload` does not exist until the integration has been loaded once → create it as a UI helper (no restart needed).
 * Temperature sensors of some integrations have **no `state_class`** → no long-term statistics. Re-expose them as measurement sensors if you want to analyse months of data.
 * button-card styles must be lists of `{property: value}` pairs; strings like `"color: red"` are silently ignored.

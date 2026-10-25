@@ -16,7 +16,10 @@ The thermostat needs a `switch`. The ESPHome on/off button is a **toggle**, so a
 
 * state = on if the stove state is `Marche` (running) or `Allumage` (igniting);
 * **turn on** presses ⏻ only if the state is `Arrêt` (off);
-* **turn off** presses ⏻ only if the state is `Marche` or `Allumage`.
+* **turn off** presses ⏻ only if the state is `Marche` or `Allumage`;
+* the switch **keeps its last state** when the stove state is `unknown`, `unavailable` or `Autre` (corrupted frame, clock or language menu), so that the thermostat's minimum cycle is not restarted.
+
+These guards rely on the stove state, which only changes a few seconds after a press: the component's 90 s **on/off debounce** covers that gap (see [esphome.md](esphome.md)).
 
 Install: in `configuration.yaml`
 ```yaml

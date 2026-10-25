@@ -46,6 +46,15 @@ static const uint32_t DELAI_JOIGNABLE_MS = 120000;
 // suivante ramene l'ecran principal complet (constate sur le poele de reference).
 static const uint32_t DELAI_AVANT_SYNCHRO_MS = 20000;
 static const uint32_t DUREE_SYNCHRO_MS = 12000;
+// Meme synchronisation en cours de route : une trame d'ecran manquee laissait HA fige sur une
+// phase perimee. Ecran principal pas revu depuis 5 min en phase de transition,
+// 30 min en marche ou a l'arret, ou 45 s apres une marche/arret.
+static const uint32_t RESYNCHRO_TRANSITION_MS = 5 * 60000;
+static const uint32_t RESYNCHRO_STABLE_MS = 30 * 60000;
+static const uint32_t RESYNCHRO_APRES_MARCHE_ARRET_MS = 45000;
+// Anti-rebond : l'etat ne change qu'apres plusieurs secondes, et chaque appui long bascule.
+// Trois appuis en 47 s ont eteint puis relance le poele de reference.
+static const uint32_t ANTI_REBOND_MARCHE_ARRET_MS = 90000;
 
 // Fronts horodates par l'interruption (tampon circulaire)
 static const uint32_t TAILLE_FRONTS = 4096;
@@ -471,8 +480,12 @@ void PiazzettaComponent::traiter_ecran_(const std::vector<uint8_t> &o) {
 
   this->dernier_ecran_ = e;
   this->ecran_recu_ = true;
-  if (!e.menu)
+  if (!e.menu) {
     this->ecran_principal_recu_ = true;
+    const std::string etat = etat_de(phase);
+    const bool stable = etat == "Marche" || etat == "Arrêt";
+    this->prochaine_synchro_ms_ = millis() + (stable ? RESYNCHRO_STABLE_MS : RESYNCHRO_TRANSITION_MS);
+  }
   ESP_LOGI(TAG, "Ecran : %s", phase.c_str());
 
   // Suite de la tache de reglage en cours
@@ -544,6 +557,13 @@ void PiazzettaComponent::demander_action(Action action) {
   }
   // Marche/arret = appui long sur ⏻ : touche 81, puis 61 repetee tant que le bouton est « maintenu ».
   // Valide : extinction et allumage declenches par l'ESP sur le poele de reference.
+  if (this->marche_arret_envoye_ && millis() - this->dernier_marche_arret_ms_ < ANTI_REBOND_MARCHE_ARRET_MS) {
+    ESP_LOGW(TAG, "Marche/arret ignore : appui precedent il y a %u s (anti-rebond %u s)",
+             (unsigned) ((millis() - this->dernier_marche_arret_ms_) / 1000), (unsigned) (ANTI_REBOND_MARCHE_ARRET_MS / 1000));
+    return;
+  }
+  this->marche_arret_envoye_ = true;
+  this->dernier_marche_arret_ms_ = millis();
   ESP_LOGW(TAG, "Marche/arret : appui long simule");
   this->emettre_octets_({this->remote_id_, 0x3E, 0x00, TOUCHE_MARCHE});
   this->pas_ = 0;
@@ -565,6 +585,7 @@ void PiazzettaComponent::avancer_tache_() {
     if (this->pas_ >= APPUIS_MAINTIEN) {
       this->terminer_tache_("appui long termine");
       this->emettre_octets_({this->remote_id_, ETAT_REPOS, 0x00, TOUCHE_INTERROGER});
+      this->prochaine_synchro_ms_ = millis() + RESYNCHRO_APRES_MARCHE_ARRET_MS;
       return;
     }
     this->emettre_octets_({this->remote_id_, ETATS_MAINTIEN[this->pas_], 0x00, TOUCHE_MAINTIEN});
@@ -607,7 +628,8 @@ void PiazzettaComponent::setup() {
   this->configurer_radio_();
   this->ecouter_();
   this->boucle_rapide_.start();
-  this->demarrage_ms_ = millis();  // la boucle doit tourner souvent pour suivre le RSSI des trames
+  // la boucle doit tourner souvent pour suivre le RSSI des trames
+  this->prochaine_synchro_ms_ = millis() + DELAI_AVANT_SYNCHRO_MS;
   // Premiere interrogation peu apres le demarrage, pour se resynchroniser
   this->derniere_interrogation_ms_ = millis() - this->intervalle_ms_ + 5000;
 }
@@ -638,14 +660,15 @@ void PiazzettaComponent::loop() {
   this->avancer_tache_();
 
   uint32_t ms = millis();
-  // Synchronisation au demarrage si le poele n'a encore envoye que l'heure
-  if (!this->synchro_faite_ && this->etape_ == Etape::REPOS && !this->ecran_principal_recu_ &&
-      ms - this->demarrage_ms_ > DELAI_AVANT_SYNCHRO_MS && ms - this->derniere_telecommande_ms_ > SILENCE_TELECOMMANDE_MS) {
-    this->synchro_faite_ = true;
+  // Synchronisation si l'ecran principal n'a pas ete revu a temps (au demarrage, ou trame manquee) :
+  // chaque ecran principal recu repousse l'echeance
+  if (this->etape_ == Etape::REPOS && (int32_t) (ms - this->prochaine_synchro_ms_) >= 0 &&
+      ms - this->derniere_telecommande_ms_ > SILENCE_TELECOMMANDE_MS) {
     ESP_LOGI(TAG, "Synchronisation : ouverture du menu ventilateur pour obtenir l'ecran complet");
     this->emettre_octets_({this->remote_id_, ETAT_REPOS, 0x00, TOUCHE_VENTILATEUR});
     this->etape_ = Etape::SYNCHRO;
     this->echeance_ms_ = ms + DUREE_SYNCHRO_MS;
+    this->prochaine_synchro_ms_ = ms + RESYNCHRO_TRANSITION_MS;  // nouvel essai si l'ecran ne revient pas
     return;
   }
   // Interrogation periodique, sauf si la vraie telecommande parle (ses reponses suffisent)

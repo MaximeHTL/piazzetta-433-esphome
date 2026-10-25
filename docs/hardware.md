@@ -7,7 +7,7 @@
 | Microcontroller | **ESP32 DevKit** (ESP32-WROOM-32, CP210x USB) | the classic dual-core ESP32. ESPHome board `esp32dev`, Arduino board "ESP32 Dev Module" |
 | Radio | **Ra-02** (AI-Thinker, Semtech **SX1278**, 433 MHz), marked "LoRa/FSK/OOK" | OOK support is mandatory |
 | Antenna | 433 MHz antenna on the Ra-02 IPEX/U.FL connector, or a 17.3 cm wire (¼ wave) | check it really is a **433 MHz** antenna (some listings say "2.4G" by mistake) |
-| Power | any USB charger (5 V, ≥ 500 mA) | permanent supply |
+| Power | any USB charger (5 V, ≥ 500 mA) | permanent supply. **The USB cable matters**: one cable cost ≈ 20 dB of 433 MHz reception (stove read at −75 dBm instead of −55, frames rejected), while Wi-Fi was fine. Prefer a short, good-quality cable, ideally with a ferrite, and check the "radio signal" sensor after any change |
 
 ### Identifying the parts
 
