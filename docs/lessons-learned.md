@@ -33,7 +33,7 @@ In the order they were met. Each one cost time; together they are probably the m
 
 * **A poll does not always return the screen.** The stove sends the full screen only when it changed (or after a key); otherwise only the clock. A hypothesis linking this to the remote's state byte was tested and **refuted**. Fix for start-up: press the fan key once, without +/−.
 * **One missed screen = a frozen state.** Since the stove does not repeat an unchanged screen, a single lost frame left Home Assistant showing "CONTROLE" while the stove was cleaning. Fix: repeat the fan-key resynchronisation when no main screen has been seen for a while.
-* **The 8-bit checksum is weak.** A corrupted screen ("NIVEA? P1") once passed it. Do not let an unrecognised state drive anything (see Home Assistant below).
+* **The 8-bit checksum is weak.** Two corrupted screens passed it on the same day ("NIVEA? P1" with 9 °C, an unreadable line with 186 °C). Fix: also **reject any frame with a wrong parity or stop bit** in its useful bytes. Replayed on 895 archived frames with a good checksum, this check rejected none of them. And do not let an unrecognised state drive anything (see Home Assistant below).
 * The remote updates its display only **when it polls**: after a command it can take up to ≈ 44 s to show the new value although the stove applied it immediately.
 
 ## Home Assistant

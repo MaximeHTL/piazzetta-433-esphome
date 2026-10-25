@@ -147,8 +147,10 @@ static std::string etat_de(const std::string &phase) {
   return "Autre";
 }
 
-// Bits NRZ (1 unite = 1 bit) -> octets : liaison serie inversee, 8 bits poids faible d'abord, parite paire
-static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees) {
+// Bits NRZ (1 unite = 1 bit) -> octets : liaison serie inversee, 8 bits poids faible d'abord, parite paire.
+// `faux` recoit, pour chaque octet, true si sa parite ou son bit de stop est faux.
+static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees, std::vector<bool> &faux) {
+  faux.clear();
   // Fusion des parasites (< 0,3 unite) avec leurs voisins
   std::vector<uint32_t> d;
   for (size_t i = 0; i < durees.size(); i++) {
@@ -197,15 +199,24 @@ static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees) {
       }
     if (bits[i + 9] == '1')
       uns++;
-    if (uns % 2 != 0 || bits[i + 10] != '0') {
-      ESP_LOGV(TAG, "Octet %u : parite ou stop faux", (unsigned) out.size());
-    }
+    faux.push_back(uns % 2 != 0 || bits[i + 10] != '0');
     out.push_back(v);
     i += 11;
   }
-  while (out.size() > 1 && out.back() == 0)
+  while (out.size() > 1 && out.back() == 0) {
     out.pop_back();  // zeros de fin = silence
+    faux.pop_back();
+  }
   return out;
+}
+
+// Vrai si les n premiers octets ont une parite et un bit de stop justes. La somme sur 8 bits seule
+// a laisse passer des ecrans corrompus (« NIVEA? P1 » a 9 °C, texte illisible a 186 °C).
+static bool octets_justes(const std::vector<bool> &faux, size_t n) {
+  for (size_t i = 0; i < n && i < faux.size(); i++)
+    if (faux[i])
+      return false;
+  return true;
 }
 
 // ---------------------------------------------------------------- Entites
@@ -355,11 +366,19 @@ void PiazzettaComponent::traiter_fronts_() {
 // ---------------------------------------------------------------- Decodage
 
 void PiazzettaComponent::traiter_trame_(const std::vector<uint32_t> &durees, int rssi) {
-  std::vector<uint8_t> o = octets_de(durees);
+  std::vector<bool> faux;
+  std::vector<uint8_t> o = octets_de(durees, faux);
   if (o.size() < 3)
     return;
   bool somme_ok = somme(o, o.size() - 1) == o.back();
-  ESP_LOGD(TAG, "Trame %d dBm : %s%s", rssi, hexa(o).c_str(), somme_ok ? "" : "(somme fausse)");
+  // Longueur utile selon le type de trame (ecran 32, heure 6, telecommande 5) : les octets
+  // parasites apres la somme ne comptent pas
+  size_t utile = o[0] == 0xB5 ? 32 : o[0] == 0xB9 ? 6 : 5;
+  bool octets_ok = octets_justes(faux, utile);
+  ESP_LOGD(TAG, "Trame %d dBm : %s%s%s", rssi, hexa(o).c_str(), somme_ok ? "" : "(somme fausse)",
+           octets_ok ? "" : " (octet faux, rejetee)");
+  if (!octets_ok)
+    return;
 
   // Trame de telecommande (5 octets, somme juste, 2e octet 3D/BD/3E/BE) avec un autre identifiant :
   // on l'annonce, pour qu'un nouvel utilisateur sache quelle valeur mettre dans remote_id.
