@@ -31,7 +31,8 @@ No wiring into the stove, no modification of the stove: an ESP32 and a 433 MHz r
 * **Reads the stove's state continuously**: the stove sends the text of the remote's screen over the radio (`NIVEAU P1`, `ALLUMAGE PHASE I`, `NETTOYAGE BRASERO`, `OFF`…), plus the room temperature, the power level and the fan speed.
 * **Controls the stove**: power level 1–4, fan speed 1–4, **on/off** (simulated long press on the ⏻ key) — each command is **verified** from the stove's answer.
 * **Home Assistant integration through ESPHome**: entities appear automatically (state, phase, temperature, power, fan, on/off, radio diagnostics).
-* **Thermostat**: a Home Assistant *generic thermostat* that switches the stove on/off around a set-point with hysteresis and a minimum cycle time, using any room temperature sensor.
+* **Thermostat**: a Home Assistant *generic thermostat* that switches the stove on/off around a set-point with hysteresis, using any room temperature sensor. A protected heater switch enforces a **1 h minimum on/off time based on the stove's real phases** (restart-proof) and never sends a second on/off before the stove screen has confirmed the first one.
+* **Robust reception and diagnostics**: parity + checksum on every frame, automatic repair of a single stray bit, screen-age and rejected/corrected-frame counters, and Home Assistant alerts (unconfirmed command, frozen screen, long ignition, unreachable stove…).
 * **A test bench** (ESP32 firmware + a local web page) to **capture, decode, compare and replay** frames — this is what made the reverse-engineering possible, and what you will use to check your own installation.
 
 ## How it works (in short)
@@ -64,7 +65,7 @@ Wiring diagram, references and tips: **[docs/hardware.md](docs/hardware.md)**.
 | --- | --- |
 | Remote | Piazzetta **F0203-1480V3** (bidirectional, LCD screen, keys: fan, flame, +, −, thermometer, clock, ★, ⏻) |
 | Stove | a Piazzetta pellet stove using this remote (power P1–P4, fan 1–4) |
-| ESPHome | 2026.9 (Arduino framework, RadioLib 7.8.1) |
+| ESPHome | 2026.9, 2026.10 (Arduino framework, RadioLib 7.8.1) |
 | Home Assistant | 2026.9 |
 
 **Unknown**: whether the first byte of the remote frames (`0xC5` here, the `remote_id` option) is the same for every remote, or specific to each remote/stove pairing. The component logs any remote it hears with a different identifier. **Please report your findings** (see Contributing).

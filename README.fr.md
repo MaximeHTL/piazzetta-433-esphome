@@ -31,7 +31,8 @@ Aucun câblage dans le poêle, aucune modification du poêle : un ESP32 et un mo
 * **Lit l'état du poêle en continu** : le poêle envoie par radio le texte de l'écran de la télécommande (`NIVEAU P1`, `ALLUMAGE PHASE I`, `NETTOYAGE BRASERO`, `OFF`…), plus la température ambiante, la puissance et la vitesse du ventilateur.
 * **Commande le poêle** : puissance 1 à 4, ventilateur 1 à 4, **marche/arrêt** (appui long simulé sur la touche ⏻). Chaque commande est **vérifiée** grâce à la réponse du poêle.
 * **S'intègre à Home Assistant via ESPHome** : les entités apparaissent toutes seules (état, phase, température, puissance, ventilateur, marche/arrêt, diagnostic radio).
-* **Fournit un thermostat** : un *thermostat générique* Home Assistant allume et éteint le poêle autour d'une consigne, avec une hystérésis et une durée minimale de cycle, à partir de n'importe quelle sonde de température de la pièce.
+* **Fournit un thermostat** : un *thermostat générique* Home Assistant allume et éteint le poêle autour d'une consigne, avec une hystérésis, à partir de n'importe quelle sonde de température de la pièce. Un interrupteur protégé impose **1 h minimum entre un allumage et un arrêt, d'après les vraies phases du poêle** (résiste aux redémarrages de HA), et n'envoie jamais une deuxième marche/arrêt avant que l'écran du poêle ait confirmé la première.
+* **Fiabilise la réception** : parité + somme de contrôle sur chaque trame, correction automatique d'un bit parasite isolé, capteurs de diagnostic (âge de l'écran, trames rejetées/corrigées) et alertes Home Assistant (commande non confirmée, écran figé, allumage trop long, poêle injoignable…).
 * **Comprend un banc de test** (firmware ESP32 + page web locale) pour **capturer, décoder, comparer et réémettre** les trames. C'est lui qui a permis la rétro-ingénierie, et c'est lui qui vous servira à vérifier votre propre installation.
 
 ## Le principe

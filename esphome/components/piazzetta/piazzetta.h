@@ -83,6 +83,10 @@ class PiazzettaComponent : public Component {
   void set_joignable(binary_sensor::BinarySensor *b) { joignable_ = b; }
   void set_puissance(PiazzettaNumber *n) { puissance_ = n; }
   void set_ventilateur(PiazzettaNumber *n) { ventilateur_ = n; }
+  void set_bascule_attente(binary_sensor::BinarySensor *b) { bascule_attente_ = b; }
+  void set_age_ecran(sensor::Sensor *s) { age_ecran_ = s; }
+  void set_trames_rejetees(sensor::Sensor *s) { trames_rejetees_ = s; }
+  void set_trames_corrigees(sensor::Sensor *s) { trames_corrigees_ = s; }
 
   void demander_reglage(Reglage reglage, int cible);
   void demander_action(Action action);
@@ -101,6 +105,7 @@ class PiazzettaComponent : public Component {
   enum class Etape : uint8_t { REPOS, ATTENTE_MENU, ATTENTE_VALEUR, APPUI_LONG, SYNCHRO };
   void avancer_tache_();
   void terminer_tache_(const char *bilan);
+  void publier_bascule_();
 
   int sck_, miso_, mosi_, cs_, rst_, dio0_, dio1_, dio2_;
   float frequence_{433.92f};
@@ -120,6 +125,10 @@ class PiazzettaComponent : public Component {
   binary_sensor::BinarySensor *joignable_{nullptr};
   PiazzettaNumber *puissance_{nullptr};
   PiazzettaNumber *ventilateur_{nullptr};
+  binary_sensor::BinarySensor *bascule_attente_{nullptr};
+  sensor::Sensor *age_ecran_{nullptr};
+  sensor::Sensor *trames_rejetees_{nullptr};
+  sensor::Sensor *trames_corrigees_{nullptr};
 
   HighFrequencyLoopRequester boucle_rapide_;
 
@@ -142,6 +151,18 @@ class PiazzettaComponent : public Component {
   bool marche_arret_envoye_{false};
   uint32_t dernier_marche_arret_ms_{0};
   Ecran dernier_ecran_;
+  std::string dernier_etat_;
+  uint32_t dernier_ecran_principal_ms_{0};
+  uint32_t demarrage_ms_{0};
+
+  // Bascule marche/arret envoyee mais pas encore confirmee par un ecran
+  bool bascule_en_attente_{false};
+  std::string etat_avant_bascule_;
+
+  // Diagnostics
+  uint32_t nb_trames_rejetees_{0};
+  uint32_t nb_trames_corrigees_{0};
+  uint32_t dernier_diagnostic_ms_{0};
 
   // Tache en cours (une seule commande radio a la fois)
   Etape etape_{Etape::REPOS};

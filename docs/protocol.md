@@ -28,6 +28,8 @@ That makes 11 bits per byte, sent back to back. Trailing zeros of the last byte 
 
 **Checksum**: the **last byte of every frame = 8-bit sum of all the previous bytes** (`sum & 0xFF`). Verified on all remote frames and on all stove frames.
 
+**Check the parity and the stop bit too.** The 8-bit sum alone let corrupted screens through (e.g. `NIVEA? P1` with 9 °C). A receiver should reject a frame where any useful byte has a wrong parity or stop bit: on several hundred archived frames with a correct checksum, none had a parity error, so the check costs nothing. The two checks together can even repair the most common defect, **one stray `1` bit** added by a glitch: a single byte with a wrong parity whose extra bit equals the checksum difference (see [esphome.md](esphome.md)).
+
 ### Worked example: the "+" key
 
 Bytes `C5 BD 00 88` → checksum `C5+BD+00+88 = 0x20A` → `0A`. Frame: `C5 BD 00 88 0A`.
@@ -132,6 +134,8 @@ Character encoding:
 * `0x5E` → **degree sign** (°)
 * other printable bytes → ASCII (`0x20` space, `0x41` A…)
 
+⚠️ **The temperature field alternates two values**: the stove shows in turn its internal set-point and the room temperature (e.g. 20 °C and 18 °C), and nothing in the frame tells which one is shown. Do not use it to regulate.
+
 Main screen example (12:45, 21 °C, power 1):
 
 ```
@@ -169,11 +173,13 @@ So a single main screen gives **power and fan speed**, without opening any menu.
 | Off | `OFF` / (empty) | — |
 | Ignition 1 | `CONTROLE` | ≈ 45 s |
 | Ignition 2 | `ALLUMAGE` / `PHASE I` | ≈ 12 min |
-| Ignition 3 | `ALLUMAGE` / `PHASE II` | ≈ 4 min 30 s |
-| Running | `NIVEAU` / `P1`…`P4` | — (total ignition ≈ 17 min) |
-| Shutdown | `NETTOYAGE` / `BRASERO` | ≈ 42 min until `OFF` (pellet feed stopped, strong ventilation to burn what is left in the burn pot; can also appear briefly while running) |
+| Ignition 3 | `ALLUMAGE` / `PHASE II` | ≈ 4 min 30 s, but can last more than 30 min |
+| Running | `NIVEAU` / `P1`…`P4` | — (total ignition **18–51 min** over the observed cycles) |
+| Shutdown | `NETTOYAGE` / `BRASERO` | **39–43 min** until `OFF` (pellet feed stopped, strong ventilation to burn what is left in the burn pot; can also appear briefly while running) |
 | Error | `DEFAUT …` (expected, exact wording not seen yet) | — |
-| Other menus seen | `TRIER` / `LANGUE` (language menu) | — |
+| Other menus seen | `TRIER` / `LANGUE` (language), `REGLAGE HORLOGE`, `JOUR …`, `HEURES HORLOGE` (clock setting) | — |
+
+The effect of a command (on/off, power, fan) shows on the screen within **1–4 s**. The clock and language menus do not start with `REGLER`, so the component classifies them as `Autre` (other); like a corrupted frame, `Autre` must never drive the thermostat.
 
 Screen texts are French on this stove (language setting); other languages will show other words.
 

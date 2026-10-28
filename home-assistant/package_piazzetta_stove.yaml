@@ -2,14 +2,231 @@
 # Install: configuration.yaml ->
 #   homeassistant:
 #     packages: !include_dir_named packages
-# then copy this file to /config/packages/ and run "Check configuration" + reload template entities.
+# then copy this file to /config/packages/ and restart Home Assistant (the first time: it creates
+# input_datetime helpers and automations; later edits only need "Check configuration" + reloads).
 #
-# Entity IDs below assume the example ESPHome config (friendly_name "Pellet stove"):
-#   sensor.pellet_stove_state, number.pellet_stove_power, number.pellet_stove_fan, button.pellet_stove_on_off
-# Replace sensor.your_room_temperature / sensor.your_outdoor_temperature with your own sensors.
+# Entity IDs below assume the example ESPHome config (esphome/piazzetta-stove.yaml, friendly_name "Pellet stove"):
+#   sensor.pellet_stove_state, sensor.pellet_stove_phase, sensor.pellet_stove_screen_age,
+#   binary_sensor.pellet_stove_stove_reachable, binary_sensor.pellet_stove_on_off_pending_confirmation,
+#   number.pellet_stove_power, number.pellet_stove_fan, button.pellet_stove_on_off
+# If you renamed the device or its entities, check the real IDs in Settings -> Devices & services -> ESPHome.
+# Replace sensor.your_room_temperature / sensor.your_outdoor_temperature with your own sensors,
+# and notify.notify (alerts) with your own notify service.
 #
 # NOTE: the "State" values come from the stove's French screen texts:
 #   Arrêt (off) · Allumage (igniting) · Marche (running) · Nettoyage (burn-pot cleaning) · Extinction · Défaut (error)
+#
+# How the heater switch is protected (details in docs/home-assistant.md):
+#   - 1 h minimum cycle held on the stove's REAL phases (time stamps kept across HA restarts),
+#     not by the thermostat's min_cycle_duration (that timer restarts from zero at every HA restart);
+#   - toggle lock: no new on/off press while the last one has not been confirmed by the stove screen;
+#   - the thermostat set to "off" never switches the stove off (it only stops regulating).
+
+input_datetime:
+  # Start of the last ignition and of the last stop (start of the burn-pot cleaning).
+  # No `initial`: HA restores the value at restart.
+  pellet_stove_last_ignition:
+    name: "Pellet stove - last ignition"
+    icon: mdi:fire
+    has_date: true
+    has_time: true
+  pellet_stove_last_stop:
+    name: "Pellet stove - last stop"
+    icon: mdi:fire-off
+    has_date: true
+    has_time: true
+  # Last on/off press sent by switch.pellet_stove_heater. As long as no phase change followed it
+  # (less than 20 min), no other press is sent: a frozen screen made the thermostat repeat the same
+  # toggle every 5 min (its keep_alive), switching the stove on and off.
+  pellet_stove_last_toggle:
+    name: "Pellet stove - last toggle"
+    icon: mdi:power
+    has_date: true
+    has_time: true
+
+automation:
+  - id: pellet_stove_phase_timestamps
+    alias: "Pellet stove - phase time stamps"
+    description: >-
+      Records the start of each ignition and each stop from the stove State, for the 1 h guard of
+      switch.pellet_stove_heater. Coming back from unavailable/unknown/Autre (restart, radio outage,
+      corrupted frame) does not count as a change, unless it reveals a missed transition.
+    mode: queued
+    triggers:
+      # Allumage and Marche from a stopped state; Marche -> Allumage = re-ignition
+      - trigger: state
+        entity_id: sensor.pellet_stove_state
+        to: ["Allumage", "Marche"]
+        id: running
+      - trigger: state
+        entity_id: sensor.pellet_stove_state
+        to: ["Nettoyage", "Extinction", "Arrêt", "Défaut"]
+        id: stopped
+    variables:
+      before: "{{ trigger.from_state.state if trigger.from_state else 'unknown' }}"
+      after: "{{ trigger.to_state.state }}"
+      t_ignition: "{{ state_attr('input_datetime.pellet_stove_last_ignition', 'timestamp') | float(0) }}"
+      t_stop: "{{ state_attr('input_datetime.pellet_stove_last_stop', 'timestamp') | float(0) }}"
+      resumed: "{{ before in ['unknown', 'unavailable', 'Autre'] }}"
+    actions:
+      - choose:
+          # Ignition: real transition from a stopped state, re-ignition, or ignition missed during an
+          # outage (we thought the stove was stopped) -> stamped now, to stay on the safe side
+          - conditions:
+              - condition: trigger
+                id: running
+              - condition: template
+                value_template: >-
+                  {{ (before in ['Arrêt', 'Nettoyage', 'Extinction', 'Défaut'])
+                     or (before == 'Marche' and after == 'Allumage')
+                     or (resumed and t_stop > t_ignition) }}
+            sequence:
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.pellet_stove_last_ignition
+                data:
+                  timestamp: "{{ now().timestamp() }}"
+          # Stop: real transition from running, or stop missed during an outage.
+          # Already at "Arrêt" without having seen the cleaning: it started at least ~40 min ago.
+          # The estimated stop is never earlier than the last ignition.
+          - conditions:
+              - condition: trigger
+                id: stopped
+              - condition: template
+                value_template: >-
+                  {{ (before in ['Allumage', 'Marche'])
+                     or (resumed and t_ignition > t_stop) }}
+            sequence:
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.pellet_stove_last_stop
+                data:
+                  timestamp: "{{ [now().timestamp() - (2400 if after == 'Arrêt' else 0), t_ignition] | max }}"
+
+  # Catch-up: at HA start-up the State is often republished by the ESP before the automation above is
+  # armed, and a hard crash can lose up to 15 min of time stamps (restored states are saved
+  # periodically). So the State is regularly compared with the time stamps.
+  - id: pellet_stove_timestamp_catch_up
+    alias: "Pellet stove - time stamp catch-up"
+    description: >-
+      Fixes the time stamps when the known stove State contradicts them (transition missed during an
+      HA restart, a crash or a radio outage). Conservative: a missed ignition is dated now, a missed
+      stop now (or now - 40 min if the stove is already at Arrêt).
+    mode: single
+    triggers:
+      - trigger: homeassistant
+        event: start
+      - trigger: time_pattern
+        minutes: "/10"
+    actions:
+      - delay:
+          seconds: "{{ 120 if trigger.platform == 'homeassistant' else 0 }}"
+      - variables:
+          stove_state: "{{ states('sensor.pellet_stove_state') }}"
+          t_ignition: "{{ state_attr('input_datetime.pellet_stove_last_ignition', 'timestamp') | float(0) }}"
+          t_stop: "{{ state_attr('input_datetime.pellet_stove_last_stop', 'timestamp') | float(0) }}"
+      - choose:
+          - conditions: "{{ stove_state in ['Allumage', 'Marche'] and t_stop > t_ignition }}"
+            sequence:
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.pellet_stove_last_ignition
+                data:
+                  timestamp: "{{ now().timestamp() }}"
+              - action: logbook.log
+                data:
+                  name: "Pellet stove"
+                  entity_id: input_datetime.pellet_stove_last_ignition
+                  message: "missed ignition caught up (State {{ stove_state }})"
+          - conditions: "{{ stove_state in ['Nettoyage', 'Extinction', 'Arrêt', 'Défaut'] and t_ignition > t_stop }}"
+            sequence:
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.pellet_stove_last_stop
+                data:
+                  timestamp: "{{ [now().timestamp() - (2400 if stove_state == 'Arrêt' else 0), t_ignition] | max }}"
+              - action: logbook.log
+                data:
+                  name: "Pellet stove"
+                  entity_id: input_datetime.pellet_stove_last_stop
+                  message: "missed stop caught up (State {{ stove_state }})"
+
+  # Operating alerts. The "Défaut" (error) alert is a separate example: automation-error-alert.yaml.
+  # Thresholds from real data on the reference stove: a command shows on the screen within 1-4 s,
+  # ignition lasts 18-51 min, burn-pot cleaning 39-43 min, the screen is re-read at least every 30 min.
+  - id: pellet_stove_operating_alerts
+    alias: "Pellet stove - operating alerts"
+    mode: queued
+    max: 10
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.pellet_stove_on_off_pending_confirmation
+        to: "on"
+        for: { minutes: 10 }
+        id: toggle_not_confirmed
+      - trigger: state
+        entity_id: binary_sensor.pellet_stove_stove_reachable
+        to: "off"
+        for: { minutes: 15 }
+        id: stove_unreachable
+      - trigger: state
+        entity_id: sensor.pellet_stove_state
+        to: "unavailable"
+        for: { minutes: 15 }
+        id: module_offline
+      - trigger: numeric_state
+        entity_id: sensor.pellet_stove_screen_age
+        above: 2700
+        id: screen_frozen
+      - trigger: state
+        entity_id: sensor.pellet_stove_state
+        to: "Allumage"
+        for: { minutes: 60 }
+        id: long_ignition
+      - trigger: state
+        entity_id: sensor.pellet_stove_state
+        to: "Autre"
+        for: { minutes: 15 }
+        id: unknown_screen
+      - trigger: state
+        entity_id: sensor.your_room_temperature
+        to: ["unavailable", "unknown"]
+        for: { minutes: 30 }
+        id: sensor_silent
+      - trigger: numeric_state
+        entity_id: sensor.your_room_temperature
+        above: 23.5
+        for: { minutes: 15 }
+        id: too_hot
+      - trigger: numeric_state
+        entity_id: sensor.your_room_temperature
+        below: 17
+        for: { minutes: 30 }
+        id: too_cold
+    conditions:
+      # The room sensor only matters while the thermostat is regulating
+      - condition: template
+        value_template: >-
+          {{ trigger.id not in ['sensor_silent', 'too_hot', 'too_cold']
+             or is_state('climate.pellet_stove', 'heat') }}
+    actions:
+      - variables:
+          messages:
+            toggle_not_confirmed: "An on/off press sent 10 min ago is still not confirmed by the stove screen. Check the stove: the command may have had no effect."
+            stove_unreachable: "The module has had no answer from the stove for 15 min (radio, stove unplugged?)."
+            module_offline: "The stove's ESPHome module has been offline for 15 min (power supply, Wi-Fi?)."
+            screen_frozen: "The stove screen has not been re-read for more than 45 min: the state shown in HA may be stale."
+            long_ignition: "The stove has been igniting for more than 1 h (failed ignition, out of pellets?)."
+            unknown_screen: "For 15 min the stove has shown an unrecognised screen: '{{ states('sensor.pellet_stove_phase') }}' (alarm?)."
+            sensor_silent: "The thermostat's room sensor has not answered for 30 min: the stove thermostat is regulating blind."
+            too_hot: "Room at {{ states('sensor.your_room_temperature') }} °C for 15 min while the stove thermostat is heating."
+            too_cold: "Room at {{ states('sensor.your_room_temperature') }} °C for 30 min while the stove thermostat is heating."
+      # Replace notify.notify with your own notify service, e.g. notify.mobile_app_<your_device>
+      # (mobile app: always notify.mobile_app_<device>, not notify.<device>).
+      - action: notify.notify
+        data:
+          title: "🔥 Pellet stove"
+          message: "{{ messages[trigger.id] }}"
 
 template:
   - switch:
@@ -19,31 +236,75 @@ template:
       - name: "Pellet stove heater"
         unique_id: pellet_stove_heater_switch
         icon: mdi:fireplace
-        # Keep the last known state during a short module outage: going through "unavailable" changes
-        # the switch state and RESETS the thermostat's minimum cycle timer. Hence no availability template.
+        # Keep the last known state during a short module outage: going through "unavailable" would
+        # flip the switch and make the thermostat act on a false state. Hence no availability template.
         # Same for "Autre": a corrupted radio frame (e.g. "NIVEA? P1") or a clock/language menu screen
         # must not flip the switch either.
         state: >-
           {% set e = states('sensor.pellet_stove_state') %}
           {% if e in ['unknown', 'unavailable', 'Autre'] %}{{ is_state('switch.pellet_stove_heater', 'on') }}
           {% else %}{{ e in ['Marche', 'Allumage'] }}{% endif %}
+        # 1 h minimum cycle held HERE, on the stove's real phases stamped in input_datetime helpers
+        # (kept across restarts), and not by the thermostat: its min_cycle_duration restarts from zero
+        # at every HA restart. A refused request is retried by the thermostat's keep_alive (5 min).
+        # Guards closed by default: a missing time stamp (lost database) blocks instead of allowing.
+        # Toggle lock: no new press while the last toggle (less than 20 min ago) has not been followed
+        # by any phase change, nor while the module reports it as not yet confirmed.
         turn_on:
           - if:
               - condition: state
                 entity_id: sensor.pellet_stove_state
                 state: "Arrêt"
+              - condition: template
+                value_template: >-
+                  {% set t = state_attr('input_datetime.pellet_stove_last_stop', 'timestamp') %}
+                  {{ t is number and now().timestamp() - t >= 3600 }}
+              - condition: template
+                value_template: &toggle_free >-
+                  {% set b = state_attr('input_datetime.pellet_stove_last_toggle', 'timestamp') | float(0) %}
+                  {% set p = [state_attr('input_datetime.pellet_stove_last_ignition', 'timestamp') | float(0),
+                              state_attr('input_datetime.pellet_stove_last_stop', 'timestamp') | float(0)] | max %}
+                  {{ not (b > p and now().timestamp() - b < 1200)
+                     and not is_state('binary_sensor.pellet_stove_on_off_pending_confirmation', 'on') }}
             then:
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.pellet_stove_last_toggle
+                data:
+                  timestamp: "{{ now().timestamp() }}"
               - action: button.press
                 target:
                   entity_id: button.pellet_stove_on_off
         turn_off:
+          # The thermostat set to "off" never switches the stove off: it only stops regulating, the stove
+          # is switched off with its own ⏻ key (or the On-off button). This also prevents HA from
+          # switching off, at start-up, a stove lit by hand while the thermostat was off. The thermostat
+          # writes its new mode after calling turn_off, hence the short delay before reading it.
+          - delay:
+              seconds: 1
           - if:
+              - condition: not
+                conditions:
+                  - condition: state
+                    entity_id: climate.pellet_stove
+                    state: "off"
               - condition: state
                 entity_id: sensor.pellet_stove_state
                 state:
                   - "Marche"
                   - "Allumage"
+              - condition: template
+                value_template: >-
+                  {% set t = state_attr('input_datetime.pellet_stove_last_ignition', 'timestamp') %}
+                  {{ t is number and now().timestamp() - t >= 3600 }}
+              - condition: template
+                value_template: *toggle_free
             then:
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.pellet_stove_last_toggle
+                data:
+                  timestamp: "{{ now().timestamp() }}"
               - action: button.press
                 target:
                   entity_id: button.pellet_stove_on_off
@@ -114,7 +375,9 @@ template:
 
 # The thermostat itself (climate.pellet_stove) is easiest to create in the UI:
 # Settings -> Devices & services -> Helpers -> Create helper -> Generic thermostat. See docs/home-assistant.md.
-# YAML equivalent (requires a restart the first time):
+# Recommended settings: heater switch.pellet_stove_heater, NO minimum cycle duration (the 1 h guard is in
+# the switch above), keep_alive 5 min (retries a request refused by the guards), tolerances 0.5 / 0.5 °C.
+# YAML equivalent (requires a restart the first time; do not declare it twice):
 #
 # climate:
 #   - platform: generic_thermostat
@@ -125,10 +388,10 @@ template:
 #     min_temp: 15
 #     max_temp: 25
 #     target_temp: 21
-#     cold_tolerance: 1.0
-#     hot_tolerance: 1.0
-#     min_cycle_duration:
-#       minutes: 60
+#     cold_tolerance: 0.5
+#     hot_tolerance: 0.5
+#     keep_alive:
+#       minutes: 5
 #     precision: 0.5
 #     target_temp_step: 0.5
 #     comfort_temp: 21

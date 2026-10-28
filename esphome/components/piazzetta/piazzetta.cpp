@@ -55,6 +55,19 @@ static const uint32_t RESYNCHRO_APRES_MARCHE_ARRET_MS = 45000;
 // Anti-rebond : l'etat ne change qu'apres plusieurs secondes, et chaque appui long bascule.
 // Trois appuis en 47 s ont eteint puis relance le poele de reference.
 static const uint32_t ANTI_REBOND_MARCHE_ARRET_MS = 90000;
+// Verrou jusqu'a confirmation : apres une bascule, aucune autre tant qu'un ecran principal recu
+// depuis n'a pas montre un Etat different de celui d'avant (plafond 20 min). Sans lui, un ecran
+// fige faisait renvoyer la bascule par le thermostat toutes les 5 min (constate sur le poele de reference).
+// En attendant, resynchronisation toutes les 2 min pour obtenir la confirmation.
+static const uint32_t VERROU_BASCULE_MAX_MS = 20 * 60000;
+static const uint32_t RESYNCHRO_BASCULE_MS = 2 * 60000;
+// Diagnostics publies dans HA (age de l'ecran, compteurs de trames)
+static const uint32_t PERIODE_DIAGNOSTIC_MS = 60000;
+// Fusion des parasites : segments plus courts que 0,45 unite (187 us). La sortie DIO2 est decoupee
+// en pas de 64 us : un parasite de 2 pas (128 us) passait l'ancien seuil de 0,3 unite (125 us).
+// Valide sur plus de 1 000 trames enregistrees (aucune regression) et par injection de parasites :
+// parasites de 128 us recuperes a 99 % (contre 11 %), aucune trame fausse acceptee.
+static const float SEUIL_FUSION = 0.45f;
 
 // Fronts horodates par l'interruption (tampon circulaire)
 static const uint32_t TAILLE_FRONTS = 4096;
@@ -147,19 +160,26 @@ static std::string etat_de(const std::string &phase) {
   return "Autre";
 }
 
+// Defauts d'un octet recu
+static const uint8_t PARITE_FAUSSE = 1, STOP_FAUX = 2;
+
 // Bits NRZ (1 unite = 1 bit) -> octets : liaison serie inversee, 8 bits poids faible d'abord, parite paire.
-// `faux` recoit, pour chaque octet, true si sa parite ou son bit de stop est faux.
-static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees, std::vector<bool> &faux) {
+// `faux` recoit, pour chaque octet, ses defauts (PARITE_FAUSSE, STOP_FAUX, 0 si l'octet est juste).
+static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees, std::vector<uint8_t> &faux) {
   faux.clear();
-  // Fusion des parasites (< 0,3 unite) avec leurs voisins
-  std::vector<uint32_t> d;
-  for (size_t i = 0; i < durees.size(); i++) {
-    if (durees[i] < 0.3f * UNITE_US && !d.empty() && i + 1 < durees.size()) {
-      d.back() += durees[i] + durees[i + 1];
-      i++;
-    } else {
-      d.push_back(durees[i]);
-    }
+  // Fusion des parasites, le plus court d'abord : un segment trop court (impulsion dans un silence,
+  // ou trou dans une impulsion) est fusionne avec ses deux voisins, ce qui garde l'alternance.
+  std::vector<uint32_t> d(durees.begin(), durees.end());
+  const uint32_t seuil = (uint32_t) (SEUIL_FUSION * UNITE_US);
+  while (d.size() >= 3) {
+    size_t k = 0;
+    for (size_t i = 1; i + 1 < d.size(); i++)
+      if (d[i] < seuil && (k == 0 || d[i] < d[k]))
+        k = i;
+    if (k == 0)
+      break;
+    d[k - 1] += d[k] + d[k + 1];
+    d.erase(d.begin() + k, d.begin() + k + 2);
   }
   std::string bits;
   for (size_t i = 0; i < d.size(); i++) {
@@ -199,7 +219,7 @@ static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees, std::
       }
     if (bits[i + 9] == '1')
       uns++;
-    faux.push_back(uns % 2 != 0 || bits[i + 10] != '0');
+    faux.push_back((uns % 2 != 0 ? PARITE_FAUSSE : 0) | (bits[i + 10] != '0' ? STOP_FAUX : 0));
     out.push_back(v);
     i += 11;
   }
@@ -212,10 +232,38 @@ static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees, std::
 
 // Vrai si les n premiers octets ont une parite et un bit de stop justes. La somme sur 8 bits seule
 // a laisse passer des ecrans corrompus (« NIVEA? P1 » a 9 °C, texte illisible a 186 °C).
-static bool octets_justes(const std::vector<bool> &faux, size_t n) {
+static bool octets_justes(const std::vector<uint8_t> &faux, size_t n) {
   for (size_t i = 0; i < n && i < faux.size(); i++)
-    if (faux[i])
+    if (faux[i] != 0)
       return false;
+  return true;
+}
+
+// Defaut le plus frequent avec une alimentation bruitee : une impulsion parasite pendant un silence
+// ajoute UN bit a 1 dans un octet (08 -> 48, 20 -> 50, constate sur le poele de reference).
+// On le retire si les deux controles designent le meme bit : un seul octet faux parmi les n utiles,
+// par sa parite seule, et un ecart de somme egal a un bit a 1 de cet octet. Sinon on ne touche a rien.
+static bool corriger_bit_parasite(std::vector<uint8_t> &o, std::vector<uint8_t> &faux, size_t n) {
+  if (o.size() < n || faux.size() < n)
+    return false;
+  size_t k = n;
+  for (size_t i = 0; i < n; i++) {
+    if (faux[i] == 0)
+      continue;
+    if (faux[i] != PARITE_FAUSSE || k != n)
+      return false;
+    k = i;
+  }
+  if (k == n || k == 0)  // rien a corriger, ou l'octet de type lui-meme
+    return false;
+  uint8_t s = somme(o, n - 1);
+  // octet de donnees : la somme calculee depasse la somme recue du bit parasite ;
+  // octet de somme : c'est la somme recue qui depasse
+  uint8_t ecart = k < n - 1 ? (uint8_t) (s - o[n - 1]) : (uint8_t) (o[n - 1] - s);
+  if (ecart == 0 || (ecart & (ecart - 1)) != 0 || (o[k] & ecart) == 0)
+    return false;
+  o[k] &= ~ecart;
+  faux[k] = 0;
   return true;
 }
 
@@ -366,17 +414,21 @@ void PiazzettaComponent::traiter_fronts_() {
 // ---------------------------------------------------------------- Decodage
 
 void PiazzettaComponent::traiter_trame_(const std::vector<uint32_t> &durees, int rssi) {
-  std::vector<bool> faux;
+  std::vector<uint8_t> faux;
   std::vector<uint8_t> o = octets_de(durees, faux);
   if (o.size() < 3)
     return;
-  bool somme_ok = somme(o, o.size() - 1) == o.back();
   // Longueur utile selon le type de trame (ecran 32, heure 6, telecommande 5) : les octets
   // parasites apres la somme ne comptent pas
   size_t utile = o[0] == 0xB5 ? 32 : o[0] == 0xB9 ? 6 : 5;
+  bool corrigee = (o[0] == 0xB5 || o[0] == 0xB9 || o[0] == this->remote_id_) && corriger_bit_parasite(o, faux, utile);
+  bool somme_ok = somme(o, o.size() - 1) == o.back();
   bool octets_ok = octets_justes(faux, utile);
-  ESP_LOGD(TAG, "Trame %d dBm : %s%s%s", rssi, hexa(o).c_str(), somme_ok ? "" : "(somme fausse)",
-           octets_ok ? "" : " (octet faux, rejetee)");
+  ESP_LOGD(TAG, "Trame %d dBm : %s%s%s%s", rssi, hexa(o).c_str(), somme_ok ? "" : "(somme fausse)",
+           corrigee ? " (bit parasite corrige)" : "", octets_ok ? "" : " (octet faux, rejetee)");
+  // Compteurs de diagnostic : une trame d'au moins 5 octets non acceptee ci-dessous est rejetee
+  if (o.size() >= 5)
+    this->nb_trames_rejetees_++;
   if (!octets_ok)
     return;
 
@@ -388,10 +440,14 @@ void PiazzettaComponent::traiter_trame_(const std::vector<uint32_t> &durees, int
              this->remote_id_);
   }
   if (o[0] == this->remote_id_ && o.size() >= 5 && somme(o, 4) == o[4]) {
+    this->nb_trames_rejetees_ -= o.size() >= 5;
+    this->nb_trames_corrigees_ += corrigee;
     this->derniere_telecommande_ms_ = millis();
     return;
   }
   if (o[0] == 0xB5 && o.size() >= 32 && somme(o, 31) == o[31]) {
+    this->nb_trames_rejetees_--;
+    this->nb_trames_corrigees_ += corrigee;
     if (this->rssi_ != nullptr)
       this->rssi_->publish_state(rssi);
     this->derniere_reponse_ms_ = millis();
@@ -400,6 +456,8 @@ void PiazzettaComponent::traiter_trame_(const std::vector<uint32_t> &durees, int
   }
   if (o[0] == 0xB9 && o.size() >= 6 && somme(o, 5) == o[5]) {
     // Etat court = heure seule (la telecommande endormie le demande toutes les ~44 s)
+    this->nb_trames_rejetees_--;
+    this->nb_trames_corrigees_ += corrigee;
     this->derniere_reponse_ms_ = millis();
     if (this->heure_ != nullptr && est_chiffre(o[1]) && est_chiffre(o[2]) && est_chiffre(o[3]) && est_chiffre(o[4])) {
       char h[12];
@@ -501,9 +559,18 @@ void PiazzettaComponent::traiter_ecran_(const std::vector<uint8_t> &o) {
   this->ecran_recu_ = true;
   if (!e.menu) {
     this->ecran_principal_recu_ = true;
+    this->dernier_ecran_principal_ms_ = millis();
     const std::string etat = etat_de(phase);
+    // Confirmation d'une bascule : un Etat connu, different de celui d'avant l'appui
+    if (this->bascule_en_attente_ && etat != "Autre" && etat != this->etat_avant_bascule_) {
+      this->bascule_en_attente_ = false;
+      ESP_LOGI(TAG, "Bascule confirmee : %s -> %s", this->etat_avant_bascule_.c_str(), etat.c_str());
+      this->publier_bascule_();
+    }
+    this->dernier_etat_ = etat;
     const bool stable = etat == "Marche" || etat == "Arrêt";
-    this->prochaine_synchro_ms_ = millis() + (stable ? RESYNCHRO_STABLE_MS : RESYNCHRO_TRANSITION_MS);
+    this->prochaine_synchro_ms_ =
+        millis() + (this->bascule_en_attente_ ? RESYNCHRO_BASCULE_MS : stable ? RESYNCHRO_STABLE_MS : RESYNCHRO_TRANSITION_MS);
   }
   ESP_LOGI(TAG, "Ecran : %s", phase.c_str());
 
@@ -576,13 +643,22 @@ void PiazzettaComponent::demander_action(Action action) {
   }
   // Marche/arret = appui long sur ⏻ : touche 81, puis 61 repetee tant que le bouton est « maintenu ».
   // Valide : extinction et allumage declenches par l'ESP sur le poele de reference.
-  if (this->marche_arret_envoye_ && millis() - this->dernier_marche_arret_ms_ < ANTI_REBOND_MARCHE_ARRET_MS) {
-    ESP_LOGW(TAG, "Marche/arret ignore : appui precedent il y a %u s (anti-rebond %u s)",
-             (unsigned) ((millis() - this->dernier_marche_arret_ms_) / 1000), (unsigned) (ANTI_REBOND_MARCHE_ARRET_MS / 1000));
+  const uint32_t ecart = millis() - this->dernier_marche_arret_ms_;
+  if (this->marche_arret_envoye_ && ecart < ANTI_REBOND_MARCHE_ARRET_MS) {
+    ESP_LOGW(TAG, "Marche/arret ignore : appui precedent il y a %u s (anti-rebond %u s)", (unsigned) (ecart / 1000),
+             (unsigned) (ANTI_REBOND_MARCHE_ARRET_MS / 1000));
+    return;
+  }
+  if (this->bascule_en_attente_ && ecart < VERROU_BASCULE_MAX_MS) {
+    ESP_LOGW(TAG, "Marche/arret ignore : la bascule d'il y a %u s n'est pas encore confirmee par l'ecran",
+             (unsigned) (ecart / 1000));
     return;
   }
   this->marche_arret_envoye_ = true;
   this->dernier_marche_arret_ms_ = millis();
+  this->bascule_en_attente_ = true;
+  this->etat_avant_bascule_ = this->dernier_etat_;
+  this->publier_bascule_();
   ESP_LOGW(TAG, "Marche/arret : appui long simule");
   this->emettre_octets_({this->remote_id_, 0x3E, 0x00, TOUCHE_MARCHE});
   this->pas_ = 0;
@@ -648,7 +724,9 @@ void PiazzettaComponent::setup() {
   this->ecouter_();
   this->boucle_rapide_.start();
   // la boucle doit tourner souvent pour suivre le RSSI des trames
+  this->demarrage_ms_ = millis();
   this->prochaine_synchro_ms_ = millis() + DELAI_AVANT_SYNCHRO_MS;
+  this->publier_bascule_();
   // Premiere interrogation peu apres le demarrage, pour se resynchroniser
   this->derniere_interrogation_ms_ = millis() - this->intervalle_ms_ + 5000;
 }
@@ -658,7 +736,9 @@ void PiazzettaComponent::loop() {
 
   uint32_t t = maintenant_us();
   if (this->en_trame_) {
-    if (t - this->dernier_rssi_us_ > 1000) {
+    // RSSI lu seulement pendant une impulsion : une lecture SPI dans un silence fait apparaitre une
+    // impulsion parasite sur DIO2 (presque tous les parasites observes tombaient a la cadence de ces lectures)
+    if (this->dernier_niveau_ == 1 && t - this->dernier_rssi_us_ > 1000) {
       float r = s_radio->getRSSI(false, true);
       if (r > this->rssi_max_)
         this->rssi_max_ = r;
@@ -702,6 +782,28 @@ void PiazzettaComponent::loop() {
     if (!this->joignable_->has_state() || this->joignable_->state != ok)
       this->joignable_->publish_state(ok);
   }
+  // Verrou de bascule expire sans confirmation : la commande est probablement restee sans effet
+  if (this->bascule_en_attente_ && ms - this->dernier_marche_arret_ms_ >= VERROU_BASCULE_MAX_MS) {
+    this->bascule_en_attente_ = false;
+    ESP_LOGW(TAG, "Bascule jamais confirmee par l'ecran en %u min : verrou leve", (unsigned) (VERROU_BASCULE_MAX_MS / 60000));
+    this->publier_bascule_();
+  }
+  if (ms - this->dernier_diagnostic_ms_ >= PERIODE_DIAGNOSTIC_MS) {
+    this->dernier_diagnostic_ms_ = ms;
+    // Age de l'ecran principal (depuis le demarrage s'il n'en est encore venu aucun)
+    if (this->age_ecran_ != nullptr)
+      this->age_ecran_->publish_state(
+          (ms - (this->ecran_principal_recu_ ? this->dernier_ecran_principal_ms_ : this->demarrage_ms_)) / 1000);
+    if (this->trames_rejetees_ != nullptr)
+      this->trames_rejetees_->publish_state(this->nb_trames_rejetees_);
+    if (this->trames_corrigees_ != nullptr)
+      this->trames_corrigees_->publish_state(this->nb_trames_corrigees_);
+  }
+}
+
+void PiazzettaComponent::publier_bascule_() {
+  if (this->bascule_attente_ != nullptr)
+    this->bascule_attente_->publish_state(this->bascule_en_attente_);
 }
 
 void PiazzettaComponent::dump_config() {

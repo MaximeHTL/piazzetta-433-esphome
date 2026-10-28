@@ -6,12 +6,15 @@ from esphome.components import binary_sensor, button, number, sensor, text_senso
 from esphome.const import (
     CONF_ID,
     DEVICE_CLASS_CONNECTIVITY,
+    DEVICE_CLASS_DURATION,
     DEVICE_CLASS_SIGNAL_STRENGTH,
     DEVICE_CLASS_TEMPERATURE,
     ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
+    STATE_CLASS_TOTAL_INCREASING,
     UNIT_CELSIUS,
     UNIT_DECIBEL_MILLIWATT,
+    UNIT_SECOND,
 )
 
 CODEOWNERS = ["@MaximeHTL"]
@@ -50,6 +53,10 @@ CONF_PUISSANCE = "puissance"
 CONF_VENTILATEUR = "ventilateur"
 CONF_INTERROGER = "interroger"
 CONF_MARCHE_ARRET = "marche_arret"
+CONF_BASCULE_ATTENTE = "bascule_en_attente"
+CONF_AGE_ECRAN = "age_ecran"
+CONF_TRAMES_REJETEES = "trames_rejetees"
+CONF_TRAMES_CORRIGEES = "trames_corrigees"
 
 broche = cv.int_range(min=0, max=39)
 
@@ -95,6 +102,30 @@ CONFIG_SCHEMA = cv.Schema(
         ),
         cv.Optional(CONF_JOIGNABLE): binary_sensor.binary_sensor_schema(
             device_class=DEVICE_CLASS_CONNECTIVITY,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+        ),
+        # Diagnostics : bascule non confirmee, fraicheur de l'ecran, qualite de reception
+        cv.Optional(CONF_BASCULE_ATTENTE): binary_sensor.binary_sensor_schema(
+            icon="mdi:timer-sand",
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+        ),
+        cv.Optional(CONF_AGE_ECRAN): sensor.sensor_schema(
+            unit_of_measurement=UNIT_SECOND,
+            accuracy_decimals=0,
+            device_class=DEVICE_CLASS_DURATION,
+            state_class=STATE_CLASS_MEASUREMENT,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+        ),
+        cv.Optional(CONF_TRAMES_REJETEES): sensor.sensor_schema(
+            icon="mdi:alert-circle-outline",
+            accuracy_decimals=0,
+            state_class=STATE_CLASS_TOTAL_INCREASING,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+        ),
+        cv.Optional(CONF_TRAMES_CORRIGEES): sensor.sensor_schema(
+            icon="mdi:auto-fix",
+            accuracy_decimals=0,
+            state_class=STATE_CLASS_TOTAL_INCREASING,
             entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
         ),
         cv.Optional(CONF_PUISSANCE): number.number_schema(PiazzettaNumber, icon="mdi:fire"),
@@ -147,6 +178,15 @@ async def to_code(config):
         cg.add(var.set_heure(await text_sensor.new_text_sensor(config[CONF_HEURE])))
     if CONF_JOIGNABLE in config:
         cg.add(var.set_joignable(await binary_sensor.new_binary_sensor(config[CONF_JOIGNABLE])))
+    if CONF_BASCULE_ATTENTE in config:
+        cg.add(var.set_bascule_attente(await binary_sensor.new_binary_sensor(config[CONF_BASCULE_ATTENTE])))
+    for cle, setter in (
+        (CONF_AGE_ECRAN, "set_age_ecran"),
+        (CONF_TRAMES_REJETEES, "set_trames_rejetees"),
+        (CONF_TRAMES_CORRIGEES, "set_trames_corrigees"),
+    ):
+        if cle in config:
+            cg.add(getattr(var, setter)(await sensor.new_sensor(config[cle])))
 
     for cle, reglage, setter in (
         (CONF_PUISSANCE, Reglage.PUISSANCE, "set_puissance"),

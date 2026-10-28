@@ -18,6 +18,10 @@ logger:
 api:
   encryption:
     key: !secret stove_api_key          # generate one: https://esphome.io/components/api/
+  # Do not reboot the module when Home Assistant is away (default: after 15 min). A reboot loses the
+  # on/off toggle lock (see bascule_en_attente below) and the start-up resync briefly opens the stove's
+  # fan menu: a flaky Home Assistant server would otherwise reboot the module again and again.
+  reboot_timeout: 0s
 
 ota:
   - platform: esphome
@@ -26,6 +30,9 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  # Keep the Wi-Fi radio always awake: power saving (default LIGHT on ESP32) wakes it in bursts,
+  # a possible source of glitches during 433 MHz receptions. The module is mains-powered anyway.
+  power_save_mode: none
   ap:
     ssid: "Piazzetta-Stove-Fallback"
     password: !secret stove_ap_password
@@ -72,6 +79,15 @@ piazzetta:
     name: "Stove radio signal"
   joignable:
     name: "Stove reachable"
+  # Diagnostics (entity category "diagnostic")
+  bascule_en_attente:
+    name: "On-off pending confirmation"   # on after an on/off press until a main screen shows the new state (max 20 min)
+  age_ecran:
+    name: "Screen age"           # seconds since the last main screen; should stay well under 30 min
+  trames_rejetees:
+    name: "Rejected frames"      # frames of 5+ bytes that failed the checks (since boot)
+  trames_corrigees:
+    name: "Corrected frames"     # frames accepted after removing one stray bit (since boot)
   puissance:
     name: "Power"                # 1..4, set = menu + steps, verified
   ventilateur:
