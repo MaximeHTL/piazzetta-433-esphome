@@ -51,7 +51,7 @@ copy the file to `/config/packages/`, *Developer tools → Check configuration*,
 | --- | --- | --- |
 | Heater | `switch.pellet_stove_heater` | the protected switch |
 | Temperature sensor | your room sensor | |
-| Cold / hot tolerance | **0.5 / 0.5 °C** | set-point 21 → ignites at 20.5, stops at 21.5; the stove's inertia does the rest |
+| Cold / hot tolerance | **0.5 / 0.5 °C** | set-point 21 → ignites **below** 20.5 and stops **above** 21.5 (strict comparisons: 20.4 and 21.6 °C with a 0.1 °C sensor); the stove's inertia does the rest |
 | Minimum cycle duration | **none** | the 1 h guard is in the switch (restart-proof), see above |
 | Keep-alive | **5 min** | re-sends the current order regularly, so a request refused by a guard is retried |
 | Min / max temperature | 15 / 25 | |
