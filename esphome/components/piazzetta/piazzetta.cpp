@@ -223,8 +223,12 @@ static std::vector<uint8_t> octets_de(const std::vector<uint32_t> &durees, std::
     out.push_back(v);
     i += 11;
   }
-  while (out.size() > 1 && out.back() == 0) {
-    out.pop_back();  // zeros de fin = silence
+  // Zeros de fin = silence, mais jamais dans la longueur utile : une somme peut valoir 00. Sinon l'octet
+  // de somme est retire et la trame est rejetee a chaque fois (constate sur l'ecran ENERGY SAVING STOP 6F
+  // d'un P963 : B5 20 06 46 ... 40 C1 18 00).
+  const size_t utile = out.empty() ? 0 : out[0] == 0xB5 ? 32 : out[0] == 0xB9 ? 6 : 5;
+  while (out.size() > std::max<size_t>(utile, 1) && out.back() == 0) {
+    out.pop_back();
     faux.pop_back();
   }
   return out;
